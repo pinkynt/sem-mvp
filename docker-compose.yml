@@ -1,0 +1,16 @@
+services:
+  node:
+    image: node:22-alpine
+    container_name: sem-mvp-node
+    working_dir: /app
+    # Maps to host UID/GID 1000:1000 so files created in /app stay owned by you, not root.
+    user: node
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    # Keep the container alive so you can exec in and run npm/npx on demand.
+    command: sleep infinity
+    tty: true
+    stdin_open: true
