@@ -1,5 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 type Todo = {
   id: string | number;
   name: string;
