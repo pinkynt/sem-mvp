@@ -20,6 +20,7 @@ import {
   StatusBadge,
 } from "@/components";
 import type { Status } from "@/components";
+import { cn } from "@/lib/cn";
 
 const VEHICLES = [
   { id: "auto", label: "Auto", rate: 700 },
@@ -56,16 +57,9 @@ const TOTAL_ACUMULADO = 1284500;
 
 type PaymentId = (typeof PAYMENT_OPTIONS)[number]["id"];
 type VehicleId = (typeof VEHICLES)[number]["id"];
-type Step =
-  | "home"
-  | "plate"
-  | "vehicle"
-  | "time"
-  | "payment"
-  | "confirm"
-  | "done";
+type Step = "home" | "plate" | "time" | "payment" | "confirm" | "done";
 
-const FLOW: Step[] = ["plate", "vehicle", "time", "payment", "confirm"];
+const FLOW: Step[] = ["plate", "time", "payment", "confirm"];
 
 const money = (n: number) => `$${n.toLocaleString("es-AR")}`;
 
@@ -213,44 +207,62 @@ export default function PermisionarioPage() {
 
         {step === "plate" && (
           <>
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-1 text-xl font-bold text-ink">
+                ¿Qué vehículo es?
+              </legend>
+              <div className="grid grid-cols-2 gap-3">
+                {VEHICLES.map((v) => {
+                  const selected = vehicleId === v.id;
+                  const Icon = v.id === "auto" ? Car : Bike;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setVehicleId(v.id)}
+                      className={cn(
+                        "flex flex-col items-center gap-3 rounded-card border px-4 py-7 text-center",
+                        "transition-[background-color,border-color] duration-150 ease-out",
+                        "outline-none focus-visible:ring-4 focus-visible:ring-brand/30",
+                        selected
+                          ? "border-brand bg-brand-tint"
+                          : "border-border bg-surface hover:border-brand-soft",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex size-16 items-center justify-center rounded-2xl",
+                          selected
+                            ? "bg-brand text-white"
+                            : "bg-surface-muted text-brand",
+                        )}
+                        aria-hidden
+                      >
+                        <Icon className="size-8" />
+                      </span>
+                      <span className="text-xl font-bold text-ink">
+                        {v.label}
+                      </span>
+                      <span className="text-base text-ink-soft">
+                        {money(v.rate)} por hora
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
             <PlateInput value={plate} onChange={setPlate} />
+
             <div className="mt-auto">
               <Button
                 fullWidth
-                disabled={plate.length < 6}
-                onClick={() => setStep("vehicle")}
+                disabled={plate.length < 6 || !vehicleId}
+                onClick={() => setStep("time")}
               >
                 Continuar
               </Button>
-            </div>
-          </>
-        )}
-
-        {step === "vehicle" && (
-          <>
-            <h2 className="text-2xl font-extrabold tracking-tight text-ink">
-              ¿Qué vehículo es?
-            </h2>
-            <div className="flex flex-col gap-3">
-              {VEHICLES.map((v) => (
-                <ChoiceButton
-                  key={v.id}
-                  label={v.label}
-                  sublabel={`${money(v.rate)} por hora`}
-                  icon={
-                    v.id === "auto" ? (
-                      <Car className="size-6" />
-                    ) : (
-                      <Bike className="size-6" />
-                    )
-                  }
-                  selected={vehicleId === v.id}
-                  onClick={() => {
-                    setVehicleId(v.id);
-                    setStep("time");
-                  }}
-                />
-              ))}
             </div>
           </>
         )}
