@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ZodError } from "zod";
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { DashboardRole, DashboardUser } from "@/contracts/dashboard";
@@ -60,9 +61,10 @@ export async function requireDashboardPageUser() {
   }
 }
 
-export function dashboardApiError(error: unknown) {
+export function dashboardApiError(error: unknown, fallbackMessage = "No pudimos completar la operación. Revisá los datos e intentá nuevamente.") {
   if (error instanceof DashboardAuthError) return Response.json({ error: error.message }, { status: 401 });
   if (error instanceof DashboardForbiddenError) return Response.json({ error: error.message }, { status: 403 });
   if (error instanceof DashboardValidationError) return Response.json({ error: error.message, field: error.field, code: error.code }, { status: error.status });
-  return Response.json({ error: error instanceof Error ? error.message : "Dashboard API error" }, { status: 400 });
+  if (error instanceof ZodError) return Response.json({ error: fallbackMessage }, { status: 422 });
+  return Response.json({ error: fallbackMessage }, { status: 400 });
 }

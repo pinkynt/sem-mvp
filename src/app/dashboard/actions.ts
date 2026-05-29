@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { requireDashboardUser } from "@/server/dashboard/auth";
-import { createTariff, setPermitHolderActive, upsertPermitHolder } from "@/server/dashboard/commands";
+import { setPermitHolderActive, upsertPermitHolder } from "@/server/dashboard/commands";
 
 export async function signInDashboard(_previous: { error?: string }, formData: FormData) {
   const email = String(formData.get("email") ?? "");
@@ -41,12 +41,6 @@ export async function togglePermitHolder(formData: FormData) {
   await requireDashboardUser();
   await setPermitHolderActive(value(formData, "id"), value(formData, "active") === "true");
   revalidatePath("/dashboard/permisionarios");
-}
-
-export async function saveTariff(formData: FormData) {
-  await requireDashboardUser();
-  await createTariff({ zoneId: value(formData, "zoneId"), vehicleKind: value(formData, "vehicleKind") as "auto" | "moto", label: value(formData, "label"), hourlyRateCents: Number(value(formData, "hourlyRateCents")), digitalDiscountPercent: Number(value(formData, "digitalDiscountPercent")) });
-  revalidatePath("/dashboard/tarifas");
 }
 
 function value(formData: FormData, key: string) { return String(formData.get(key) ?? ""); }

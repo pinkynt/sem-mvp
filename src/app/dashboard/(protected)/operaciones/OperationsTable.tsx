@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { OperationFilters, OperationRowDto, ZoneDto } from "@/contracts/dashboard";
 import { DashboardBadge } from "@/components/dashboard/DashboardBadge";
 import { DataTable } from "@/components/dashboard/DataTable";
-import { formatCurrency, formatDateTime } from "@/components/dashboard/format";
+import { formatCurrency, formatDateTime, formatPaymentStatus } from "@/components/dashboard/format";
 import { MAX_OPERATION_FILTER_DATE, MIN_OPERATION_FILTER_DATE } from "@/lib/operation-date-filters";
 
 const columns: ColumnDef<OperationRowDto>[] = [
@@ -14,7 +14,7 @@ const columns: ColumnDef<OperationRowDto>[] = [
   { accessorKey: "zoneName", header: "Zona" },
   { accessorKey: "permitHolderName", header: "Permisionario" },
   { accessorKey: "method", header: "Medio", cell: ({ row }) => <DashboardBadge tone={row.original.method === "digital" ? "digital" : "neutral"}>{row.original.method === "digital" ? "Mercado Pago" : "Efectivo"}</DashboardBadge> },
-  { accessorKey: "status", header: "Estado", cell: ({ row }) => <DashboardBadge tone={row.original.status === "confirmed" ? "confirmed" : row.original.status === "pending" ? "pending" : "failed"}>{row.original.status}</DashboardBadge> },
+  { accessorKey: "status", header: "Estado", cell: ({ row }) => <DashboardBadge tone={row.original.status === "confirmed" ? "confirmed" : row.original.status === "pending" ? "pending" : "failed"}>{formatPaymentStatus(row.original.status)}</DashboardBadge> },
   { accessorKey: "amountCents", header: "Monto", cell: ({ row }) => formatCurrency(row.original.amountCents) },
   { accessorKey: "createdAt", header: "Fecha", cell: ({ row }) => formatDateTime(row.original.createdAt) },
   { id: "actions", header: "Acciones", cell: ({ row }) => <Link className="font-bold text-brand hover:text-brand-strong" href={`/dashboard/operaciones/${row.original.id}`}>Ver detalle</Link> },
