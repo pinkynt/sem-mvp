@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   }
 
   const queryDataId = request.nextUrl.searchParams.get("data.id");
-  const orderId = queryDataId ?? body.data?.id;
+  const orderId = normalizeWebhookDataId(queryDataId ?? body.data?.id);
 
   if (!orderId) {
     return Response.json({ error: "Missing MercadoPago order ID" }, { status: 400 });
@@ -87,6 +87,12 @@ function isEmbeddedOrder(
         data.total_paid_amount ||
         data.transactions),
   );
+}
+
+function normalizeWebhookDataId(dataId: unknown) {
+  if (dataId == null) return null;
+  const normalized = String(dataId).trim();
+  return normalized || null;
 }
 
 function parseWebhookBody(rawBody: string): MercadoPagoOrderWebhookBody | null {
