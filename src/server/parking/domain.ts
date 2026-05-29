@@ -1,0 +1,625 @@
+import { createAdminClient } from "@/utils/supabase/admin";
+import { createMercadoPagoQrOrder } from "@/server/mercadopago/qr-orders";
+import type {
+  CloseParkingSessionResponse,
+  CreateParkingPaymentRequest,
+  CreateParkingPaymentResponse,
+  OpenParkingSessionRequest,
+  OpenParkingSessionResponse,
+  ParkingDashboardDto,
+  ParkingPaymentStatusDto,
+  ParkingQrDto,
+  ParkingQuoteDto,
+  ParkingQuoteRequest,
+  ParkingReceiptDto,
+  ParkingSessionDto,
+  PaymentDto,
+  PaymentMethod,
+  PaymentStatus,
+  VehicleKind,
+  VehicleTariffDto,
+} from "@/contracts/parking";
+import type { MercadoPagoQrOrderResponse } from "@/server/mercadopago/types";
+
+const DEFAULT_DEMO_PERMIT_HOLDER_FILE_NUMBER = "DEMO-001";
+
+type TariffRow = {
+  id: string;
+  zone_id: string;
+  vehicle_kind: VehicleKind;
+  label: string;
+  hourly_rate_cents: number;
+  digital_discount_percent: number;
+};
+
+type SessionRow = {
+  id: string;
+  zone_id: string;
+  permit_holder_id: string;
+  license_plate: string;
+  vehicle_kind: VehicleKind;
+  status: "active" | "closed";
+  started_at: string;
+  closed_at: string | null;
+};
+
+type PaymentRow = {
+  id: string;
+  zone_id: string;
+  permit_holder_id: string;
+  parking_session_id: string | null;
+  license_plate: string;
+  vehicle_kind: VehicleKind;
+  method: PaymentMethod;
+  status: PaymentStatus;
+  amount_cents: number;
+  base_amount_cents: number;
+  discount_cents: number;
+  duration_minutes: number;
+  valid_until: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+};
+
+type GatewayRefRow = {
+  id: string;
+  payment_id: string;
+  provider: "mercadopago";
+  provider_order_id: string | null;
+  provider_payment_id: string | null;
+  external_reference: string;
+  qr_data: string | null;
+  qr_image_data_url: string | null;
+};
+
+type DemoContext = {
+  permitHolder: {
+    id: string;
+    display_name: string;
+    file_number: string;
+    zone_id: string;
+    zones: { id: string; name: string } | null;
+  };
+  tariffs: TariffRow[];
+};
+
+export function normalizeLicensePlate(value: string) {
+  const normalized = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!/^[A-Z]{2}\d{3}[A-Z]{2}$/.test(normalized) && !/^[A-Z]{3}\d{3}$/.test(normalized)) {
+    throw new Error("Invalid license plate");
+  }
+  return normalized;
+}
+
+export async function getPermitHolderHome(): Promise<ParkingDashboardDto> {
+  const { permitHolder, tariffs } = await getDemoContext();
+  const supabase = createAdminClient();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [{ data: activeSessions, error: sessionsError }, { data: recentPayments, error: paymentsError }] =
+    await Promise.all([
+      supabase
+        .from("parking_sessions")
+        .select("*")
+        .eq("permit_holder_id", permitHolder.id)
+        .eq("status", "active")
+        .order("started_at", { ascending: false }),
+      supabase
+        .from("payments")
+        .select("*")
+        .eq("permit_holder_id", permitHolder.id)
+        .order("created_at", { ascending: false })
+        .limit(8),
+    ]);
+
+  if (sessionsError) throw new Error(sessionsError.message);
+  if (paymentsError) throw new Error(paymentsError.message);
+
+  const paymentRows = (recentPayments ?? []) as PaymentRow[];
+  const confirmedPayments = paymentRows.filter((payment) => payment.status === "confirmed");
+  const todayPayments = confirmedPayments.filter(
+    (payment) => new Date(payment.confirmed_at ?? payment.created_at) >= today,
+  );
+
+  return {
+    permitHolder: {
+      id: permitHolder.id,
+      displayName: permitHolder.display_name,
+      fileNumber: permitHolder.file_number,
+      zone: {
+        id: permitHolder.zones?.id ?? permitHolder.zone_id,
+        name: permitHolder.zones?.name ?? "Zona asignada",
+      },
+    },
+    tariffs: tariffs.map(mapTariff),
+    totals: {
+      todayAmountCents: todayPayments.reduce((sum, payment) => sum + payment.amount_cents, 0),
+      todayCount: todayPayments.length,
+      accumulatedAmountCents: confirmedPayments.reduce((sum, payment) => sum + payment.amount_cents, 0),
+    },
+    activeSessions: ((activeSessions ?? []) as SessionRow[]).map((session) =>
+      mapSession(session, tariffs),
+    ),
+    recentPayments: paymentRows.map((payment) => mapPayment(payment)),
+  };
+}
+
+export async function quoteParkingPayment(input: ParkingQuoteRequest): Promise<ParkingQuoteDto> {
+  const { tariffs } = await getDemoContext();
+  const tariff = getTariff(tariffs, input.vehicleKind);
+  const durationMinutes = input.sessionId
+    ? await getSessionElapsedMinutes(input.sessionId)
+    : Math.max(1, input.durationMinutes ?? 60);
+  return buildQuote(tariff, input.method, durationMinutes);
+}
+
+export async function createPrepaidPayment(
+  input: CreateParkingPaymentRequest,
+): Promise<CreateParkingPaymentResponse> {
+  const licensePlate = normalizeLicensePlate(input.licensePlate);
+  const { permitHolder, tariffs } = await getDemoContext();
+  const tariff = getTariff(tariffs, input.vehicleKind);
+  const quote = input.sessionId
+    ? buildQuote(tariff, input.method, await getSessionElapsedMinutes(input.sessionId))
+    : buildQuote(tariff, input.method, input.durationMinutes ?? 60);
+  const status = input.method === "cash" ? "confirmed" : "pending";
+  const now = new Date().toISOString();
+  const supabase = createAdminClient();
+
+  if (input.sessionId) {
+    const existingPayment = await getExistingClosePayment(input.sessionId);
+    if (existingPayment) {
+      const payment = mapPayment(existingPayment);
+      const existingQuote = await quoteFromPayment(payment);
+      if (payment.status === "confirmed") await closeSession(input.sessionId);
+      return {
+        payment,
+        quote: existingQuote,
+        receipt: payment.status === "confirmed" ? buildReceipt(payment, existingQuote) : null,
+        qr: await getPaymentQr(payment.id),
+      };
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("payments")
+    .insert({
+      zone_id: permitHolder.zone_id,
+      permit_holder_id: permitHolder.id,
+      parking_session_id: input.sessionId ?? null,
+      license_plate: licensePlate,
+      vehicle_kind: input.vehicleKind,
+      method: input.method,
+      status,
+      amount_cents: quote.finalAmountCents,
+      base_amount_cents: quote.baseAmountCents,
+      discount_cents: quote.discountCents,
+      duration_minutes: quote.durationMinutes,
+      valid_until: quote.validUntil,
+      confirmed_at: status === "confirmed" ? now : null,
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    if (input.sessionId && error.code === "23505") {
+      const existingPayment = await getExistingClosePayment(input.sessionId);
+      if (existingPayment) {
+        const payment = mapPayment(existingPayment);
+        const existingQuote = await quoteFromPayment(payment);
+        return {
+          payment,
+          quote: existingQuote,
+          receipt: payment.status === "confirmed" ? buildReceipt(payment, existingQuote) : null,
+          qr: await getPaymentQr(payment.id),
+        };
+      }
+    }
+    throw new Error(error.message);
+  }
+
+  const payment = mapPayment(data as PaymentRow);
+  if (input.method === "cash") {
+    if (input.sessionId) await closeSession(input.sessionId);
+    return { payment, quote, receipt: buildReceipt(payment, quote), qr: null };
+  }
+
+  const qr = await createPaymentQr(payment, quote);
+  return { payment, quote, receipt: null, qr };
+}
+
+export async function getPaymentStatus(paymentId: string): Promise<ParkingPaymentStatusDto> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("id", paymentId)
+    .single();
+  if (error) throw new Error(error.message);
+  const payment = mapPayment(data as PaymentRow);
+  const quote = await quoteFromPayment(payment);
+  const qr = await getPaymentQr(paymentId);
+  return {
+    payment,
+    receipt: payment.status === "confirmed" ? buildReceipt(payment, quote) : null,
+    qr,
+  };
+}
+
+export async function openParkingSession(
+  input: OpenParkingSessionRequest,
+): Promise<OpenParkingSessionResponse> {
+  const licensePlate = normalizeLicensePlate(input.licensePlate);
+  const { permitHolder, tariffs } = await getDemoContext();
+  getTariff(tariffs, input.vehicleKind);
+  const supabase = createAdminClient();
+  const existingSession = await getActiveSessionForPlate(permitHolder.id, licensePlate);
+  if (existingSession) return { session: mapSession(existingSession, tariffs) };
+
+  const { data, error } = await supabase
+    .from("parking_sessions")
+    .insert({
+      zone_id: permitHolder.zone_id,
+      permit_holder_id: permitHolder.id,
+      license_plate: licensePlate,
+      vehicle_kind: input.vehicleKind,
+      status: "active",
+    })
+    .select("*")
+    .single();
+  if (error) {
+    if (error.code === "23505") {
+      const racedSession = await getActiveSessionForPlate(permitHolder.id, licensePlate);
+      if (racedSession) return { session: mapSession(racedSession, tariffs) };
+    }
+    throw new Error(error.message);
+  }
+  return { session: mapSession(data as SessionRow, tariffs) };
+}
+
+export async function quoteCloseSession(sessionId: string, method: PaymentMethod) {
+  const session = await getActiveSession(sessionId);
+  return quoteParkingPayment({
+    vehicleKind: session.vehicle_kind,
+    method,
+    sessionId,
+  });
+}
+
+export async function closeParkingSession(
+  sessionId: string,
+  method: PaymentMethod,
+): Promise<CloseParkingSessionResponse> {
+  const session = await getSessionById(sessionId);
+  if (session.status !== "active") {
+    const existingPayment = await getExistingClosePayment(sessionId);
+    if (!existingPayment) throw new Error("Parking session is already closed");
+    const payment = mapPayment(existingPayment);
+    const quote = await quoteFromPayment(payment);
+    return {
+      payment,
+      quote,
+      receipt: payment.status === "confirmed" ? buildReceipt(payment, quote) : null,
+      qr: await getPaymentQr(payment.id),
+      session: mapSession(session, (await getDemoContext()).tariffs),
+    };
+  }
+
+  const paymentResponse = await createPrepaidPayment({
+    licensePlate: session.license_plate,
+    vehicleKind: session.vehicle_kind,
+    method,
+    sessionId,
+  });
+  const mappedSession = paymentResponse.payment.status === "confirmed"
+    ? { ...mapSession({ ...session, status: "closed", closed_at: new Date().toISOString() }, (await getDemoContext()).tariffs), status: "closed" as const }
+    : mapSession(session, (await getDemoContext()).tariffs);
+  return { ...paymentResponse, session: mappedSession };
+}
+
+export async function applyMercadoPagoOrderToPayment(order: MercadoPagoQrOrderResponse) {
+  if (!order.external_reference) return null;
+  return updatePaymentFromGatewayRef(
+    order.external_reference,
+    mapMercadoPagoOrderToPaymentStatus(order),
+  );
+}
+
+async function updatePaymentFromGatewayRef(externalReference: string, nextStatus: PaymentStatus) {
+  const supabase = createAdminClient();
+  const { data: ref, error: refError } = await supabase
+    .from("payment_gateway_refs")
+    .select("*")
+    .eq("external_reference", externalReference)
+    .maybeSingle();
+  if (refError) throw new Error(refError.message);
+  if (!ref) return null;
+
+  const now = new Date().toISOString();
+  const gatewayRef = ref as GatewayRefRow;
+  const currentPayment = await getPaymentRow(gatewayRef.payment_id);
+  if (!currentPayment) return null;
+
+  if (currentPayment.status === "confirmed" && nextStatus !== "refunded") {
+    return mapPayment(currentPayment);
+  }
+
+  const update = nextStatus === "confirmed"
+    ? { status: nextStatus, confirmed_at: currentPayment.confirmed_at ?? now }
+    : { status: nextStatus, confirmed_at: nextStatus === "refunded" ? currentPayment.confirmed_at : null };
+
+  const { data: payment, error } = await supabase
+    .from("payments")
+    .update(update)
+    .eq("id", gatewayRef.payment_id)
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+
+  const row = payment as PaymentRow;
+  if (row.status === "confirmed" && row.parking_session_id) await closeSession(row.parking_session_id);
+  return mapPayment(row);
+}
+
+async function createPaymentQr(payment: PaymentDto, quote: ParkingQuoteDto): Promise<ParkingQrDto> {
+  const externalId = `sem_${payment.id.replaceAll("-", "")}`.slice(0, 64);
+  const qr = await createMercadoPagoQrOrder({
+    amount: (quote.finalAmountCents / 100).toFixed(2),
+    description: `SEM ${payment.licensePlate}`,
+    externalId,
+  });
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("payment_gateway_refs").insert({
+    payment_id: payment.id,
+    provider: "mercadopago",
+    provider_order_id: qr.orderId,
+    provider_payment_id: qr.paymentId ?? null,
+    external_reference: externalId,
+    qr_data: qr.qrData,
+    qr_image_data_url: qr.qrImageDataUrl,
+    raw_provider_payload: qr.raw,
+  });
+  if (error) throw new Error(error.message);
+  return { qrData: qr.qrData, qrImageDataUrl: qr.qrImageDataUrl, providerOrderId: qr.orderId };
+}
+
+async function getDemoContext(): Promise<DemoContext> {
+  const fileNumber = process.env.SEM_DEMO_PERMIT_HOLDER_LEGAJO ?? DEFAULT_DEMO_PERMIT_HOLDER_FILE_NUMBER;
+  const supabase = createAdminClient();
+  const { data: permitHolder, error: holderError } = await supabase
+    .from("permit_holders")
+    .select("id, display_name, file_number, zone_id, zones(id, name)")
+    .eq("file_number", fileNumber)
+    .single();
+  if (holderError) throw new Error(holderError.message);
+
+  const holder = permitHolder as unknown as DemoContext["permitHolder"];
+  const { data: tariffs, error: tariffsError } = await supabase
+    .from("tariffs")
+    .select("*")
+    .eq("zone_id", holder.zone_id)
+    .eq("active", true)
+    .order("vehicle_kind", { ascending: true });
+  if (tariffsError) throw new Error(tariffsError.message);
+  return { permitHolder: holder, tariffs: (tariffs ?? []) as TariffRow[] };
+}
+
+function getTariff(tariffs: TariffRow[], vehicleKind: VehicleKind) {
+  const tariff = tariffs.find((item) => item.vehicle_kind === vehicleKind);
+  if (!tariff) throw new Error(`No active tariff for ${vehicleKind}`);
+  return tariff;
+}
+
+function buildQuote(tariff: TariffRow, method: PaymentMethod, durationMinutes: number): ParkingQuoteDto {
+  const billedMinutes = Math.max(60, Math.ceil(durationMinutes / 60) * 60);
+  const baseAmountCents = Math.round((tariff.hourly_rate_cents * billedMinutes) / 60);
+  const discountCents = method === "digital"
+    ? Math.round(baseAmountCents * (tariff.digital_discount_percent / 100))
+    : 0;
+  return {
+    vehicleKind: tariff.vehicle_kind,
+    vehicleLabel: tariff.label,
+    method,
+    durationMinutes,
+    billedMinutes,
+    hourlyRateCents: tariff.hourly_rate_cents,
+    baseAmountCents,
+    discountCents,
+    finalAmountCents: baseAmountCents - discountCents,
+    digitalDiscountPercent: tariff.digital_discount_percent,
+    validUntil: new Date(Date.now() + durationMinutes * 60 * 1000).toISOString(),
+  };
+}
+
+async function getSessionElapsedMinutes(sessionId: string) {
+  const session = await getActiveSession(sessionId);
+  return Math.max(1, Math.ceil((Date.now() - new Date(session.started_at).getTime()) / 60000));
+}
+
+async function getActiveSession(sessionId: string): Promise<SessionRow> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("parking_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .eq("status", "active")
+    .single();
+  if (error) throw new Error(error.message);
+  return data as SessionRow;
+}
+
+async function getSessionById(sessionId: string): Promise<SessionRow> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("parking_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .single();
+  if (error) throw new Error(error.message);
+  return data as SessionRow;
+}
+
+async function getActiveSessionForPlate(permitHolderId: string, licensePlate: string): Promise<SessionRow | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("parking_sessions")
+    .select("*")
+    .eq("permit_holder_id", permitHolderId)
+    .eq("license_plate", licensePlate)
+    .eq("status", "active")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as SessionRow | null;
+}
+
+async function getExistingClosePayment(sessionId: string): Promise<PaymentRow | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("parking_session_id", sessionId)
+    .in("status", ["pending", "confirmed"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as PaymentRow | null;
+}
+
+async function getPaymentRow(paymentId: string): Promise<PaymentRow | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as PaymentRow | null;
+}
+
+async function closeSession(sessionId: string) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("parking_sessions")
+    .update({ status: "closed", closed_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("status", "active");
+  if (error) throw new Error(error.message);
+}
+
+async function quoteFromPayment(payment: PaymentDto) {
+  const { tariffs } = await getDemoContext();
+  const tariff = getTariff(tariffs, payment.vehicleKind);
+  const billedMinutes = Math.max(60, Math.ceil(payment.durationMinutes / 60) * 60);
+  return {
+    vehicleKind: payment.vehicleKind,
+    vehicleLabel: tariff.label,
+    method: payment.method,
+    durationMinutes: payment.durationMinutes,
+    billedMinutes,
+    hourlyRateCents: Math.round((payment.baseAmountCents * 60) / billedMinutes),
+    baseAmountCents: payment.baseAmountCents,
+    discountCents: payment.discountCents,
+    finalAmountCents: payment.amountCents,
+    digitalDiscountPercent: payment.baseAmountCents > 0
+      ? Math.round((payment.discountCents / payment.baseAmountCents) * 100)
+      : 0,
+    validUntil: payment.validUntil,
+  } satisfies ParkingQuoteDto;
+}
+
+function mapMercadoPagoOrderToPaymentStatus(order: MercadoPagoQrOrderResponse): PaymentStatus {
+  const payment = order.transactions?.payments?.[0];
+  const hasRefund = (order.transactions?.refunds?.length ?? 0) > 0;
+
+  if (
+    hasRefund ||
+    order.status === "refunded" ||
+    order.status_detail === "refunded" ||
+    order.status_detail === "partially_refunded" ||
+    Number(payment?.refunded_amount ?? 0) > 0
+  ) {
+    return "refunded";
+  }
+
+  if (
+    (order.status === "processed" || order.status === "paid") &&
+    order.status_detail === "accredited"
+  ) {
+    return "confirmed";
+  }
+
+  if (payment?.status === "approved" && payment.status_detail === "accredited") {
+    return "confirmed";
+  }
+
+  if (order.status === "expired") return "expired";
+  if (order.status === "canceled" || order.status === "cancelled") return "cancelled";
+  if (order.status === "failed" || payment?.status === "rejected") return "failed";
+
+  return "pending";
+}
+
+async function getPaymentQr(paymentId: string): Promise<ParkingQrDto | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("payment_gateway_refs")
+    .select("*")
+    .eq("payment_id", paymentId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const ref = data as GatewayRefRow;
+  if (!ref.qr_data || !ref.qr_image_data_url || !ref.provider_order_id) return null;
+  return {
+    qrData: ref.qr_data,
+    qrImageDataUrl: ref.qr_image_data_url,
+    providerOrderId: ref.provider_order_id,
+  };
+}
+
+function mapTariff(row: TariffRow): VehicleTariffDto {
+  return {
+    vehicleKind: row.vehicle_kind,
+    label: row.label,
+    hourlyRateCents: row.hourly_rate_cents,
+    digitalDiscountPercent: row.digital_discount_percent,
+  };
+}
+
+function mapSession(row: SessionRow, tariffs: TariffRow[]): ParkingSessionDto {
+  const tariff = getTariff(tariffs, row.vehicle_kind);
+  const end = row.closed_at ? new Date(row.closed_at).getTime() : Date.now();
+  return {
+    id: row.id,
+    licensePlate: row.license_plate,
+    vehicleKind: row.vehicle_kind,
+    vehicleLabel: tariff.label,
+    startedAt: row.started_at,
+    elapsedMinutes: Math.max(1, Math.ceil((end - new Date(row.started_at).getTime()) / 60000)),
+    status: row.status,
+  };
+}
+
+function mapPayment(row: PaymentRow): PaymentDto {
+  return {
+    id: row.id,
+    licensePlate: row.license_plate,
+    vehicleKind: row.vehicle_kind,
+    method: row.method,
+    status: row.status,
+    amountCents: row.amount_cents,
+    baseAmountCents: row.base_amount_cents,
+    discountCents: row.discount_cents,
+    durationMinutes: row.duration_minutes,
+    createdAt: row.created_at,
+    confirmedAt: row.confirmed_at,
+    validUntil: row.valid_until,
+    sessionId: row.parking_session_id,
+  };
+}
+
+function buildReceipt(payment: PaymentDto, quote: ParkingQuoteDto): ParkingReceiptDto {
+  return { payment, quote, code: `SEM-${payment.id.slice(0, 8).toUpperCase()}` };
+}
