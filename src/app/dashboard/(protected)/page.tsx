@@ -3,6 +3,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { LatestMovements } from "@/components/dashboard/LatestMovements";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
 import { AiDailyInsightsCard } from "@/components/dashboard/AiDailyInsightsCard";
+import { DashboardAiChat } from "@/components/dashboard/DashboardAiChat";
 import { formatCurrency, formatPercent } from "@/components/dashboard/format";
 import { getDashboardKpis, getLatestMovements, getRevenueChart } from "@/server/dashboard/queries";
 import { getDashboardAiInsights } from "@/server/dashboard/ai-insights";
@@ -21,6 +22,7 @@ export default async function DashboardHomePage() {
         <MetricCard label="Pagos digitales" value={formatPercent(kpis.digitalSharePercent)} hint="Sobre cobros confirmados" icon={<Smartphone className="size-6" />} />
       </section>
       <AiDailyInsightsCard insights={aiInsights} />
+      <DashboardAiChat />
       <section className="grid gap-6 lg:grid-cols-[1.45fr_0.9fr]">
         <article className="rounded-card border border-border bg-surface p-6 shadow-sm">
           <h2 className="text-xl font-extrabold text-brand-strong">Recaudación últimos 7 días</h2>
