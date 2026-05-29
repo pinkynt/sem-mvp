@@ -31,7 +31,7 @@ export function verifyMercadoPagoWebhookSignature({
     return false;
   }
 
-  const manifest = `id:${dataId.toLowerCase()};request-id:${xRequestId};ts:${timestamp};`;
+  const manifest = `id:${dataId};request-id:${xRequestId};ts:${timestamp};`;
   const expectedHash = crypto
     .createHmac("sha256", secret)
     .update(manifest)
