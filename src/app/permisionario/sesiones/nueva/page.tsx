@@ -7,6 +7,7 @@ import { AppHeader, Button, ChoiceButton, PlateInput } from "@/components";
 import type { ParkingDashboardDto, VehicleKind } from "@/contracts/parking";
 import { getPermitHolderHome, openParkingSession } from "@/features/parking/api";
 import { displayPlate, money } from "@/lib/parking-format";
+import { isValidPlate } from "@/lib/plate";
 import { cn } from "@/lib/cn";
 
 type Mode = "prepago" | "pospago";
@@ -42,12 +43,25 @@ export default function NuevaPage() {
   const stepNumber = FLOW.indexOf(step) + 1;
 
   function back() {
+    setError(null);
     if (step === "plate") {
       router.push("/permisionario");
       return;
     }
     setStep("plate");
   }
+
+  function handlePlateChange(next: string) {
+    setPlate(next);
+    if (error) setError(null);
+  }
+
+  function handleVehicleKind(next: VehicleKind) {
+    setVehicleKind(next);
+    if (error) setError(null);
+  }
+
+  const plateValid = isValidPlate(plate, vehicleKind);
 
   async function createSession(mode: Mode) {
     if (!vehicleKind) return;
@@ -93,7 +107,7 @@ export default function NuevaPage() {
         tabIndex={-1}
         className="step-in flex flex-1 flex-col gap-5 overflow-y-auto p-4 outline-none sm:gap-6 sm:p-6"
       >
-        {error && (
+        {error && step !== "plate" && (
           <div className="rounded-card border border-danger/20 bg-danger/5 px-4 py-3 text-sm font-semibold text-danger">
             {error}
           </div>
@@ -112,7 +126,7 @@ export default function NuevaPage() {
                       key={tariff.vehicleKind}
                       type="button"
                       aria-pressed={selected}
-                      onClick={() => setVehicleKind(tariff.vehicleKind)}
+                      onClick={() => handleVehicleKind(tariff.vehicleKind)}
                       className={cn(
                         "flex flex-col items-center gap-3 rounded-card border px-4 py-7 text-center transition-[background-color,border-color] duration-150 ease-out outline-none focus-visible:ring-4 focus-visible:ring-brand/30",
                         selected ? "border-brand bg-brand-tint" : "border-border bg-surface hover:border-brand-soft",
@@ -129,10 +143,10 @@ export default function NuevaPage() {
               </div>
             </fieldset>
 
-            <PlateInput value={plate} onChange={setPlate} />
+            <PlateInput value={plate} onChange={handlePlateChange} vehicleKind={vehicleKind} />
 
             <div className="mt-auto">
-              <Button fullWidth disabled={plate.length < 6 || !vehicleKind} onClick={() => setStep("kind")}>
+              <Button fullWidth disabled={!vehicleKind || !plateValid} onClick={() => setStep("kind")}>
                 Continuar
               </Button>
             </div>

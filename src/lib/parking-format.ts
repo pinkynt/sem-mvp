@@ -1,5 +1,6 @@
 import type { PaymentMethod, PaymentDto } from "@/contracts/parking";
 import type { Status } from "@/components";
+import { formatPlateGrouped } from "@/lib/plate";
 
 export function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("es-AR")}`;
@@ -16,7 +17,7 @@ export function elapsedLabel(min: number): string {
 }
 
 export function displayPlate(plate: string): string {
-  return plate.length === 7 ? `${plate.slice(0, 2)} ${plate.slice(2, 5)} ${plate.slice(5)}` : plate;
+  return formatPlateGrouped(plate);
 }
 
 export function statusFromPayment(method: PaymentMethod, status: PaymentDto["status"]): Status {

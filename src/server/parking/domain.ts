@@ -88,8 +88,11 @@ type DemoContext = {
 
 export function normalizeLicensePlate(value: string) {
   const normalized = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!/^[A-Z]{2}\d{3}[A-Z]{2}$/.test(normalized) && !/^[A-Z]{3}\d{3}$/.test(normalized)) {
-    throw new Error("Invalid license plate");
+  const isAutoMercosur = /^[A-Z]{2}\d{3}[A-Z]{2}$/.test(normalized);
+  const isAutoLegacy = /^[A-Z]{3}\d{3}$/.test(normalized);
+  const isMotoMercosur = /^[A-Z]\d{3}[A-Z]{3}$/.test(normalized);
+  if (!isAutoMercosur && !isAutoLegacy && !isMotoMercosur) {
+    throw new Error("Patente o formato inválido");
   }
   return normalized;
 }
