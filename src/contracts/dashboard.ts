@@ -14,3 +14,4 @@ export type OperationDetailDto = OperationRowDto & { vehicleKind: VehicleKind; b
 export type PermitHolderAdminDto = { id: string; displayName: string; fileNumber: string; zoneId: string; zoneName: string; active: boolean; account: { id: string; username: string; active: boolean; passwordUpdatedAt: string } | null; createdAt: string };
 export type TariffDto = { id: string; zoneId: string; zoneName: string; vehicleKind: VehicleKind; label: string; hourlyRateCents: number; digitalDiscountPercent: number; active: boolean; createdAt: string };
 export type ZoneDto = { id: string; name: string; active: boolean };
+export type ZoneAdminDto = ZoneDto & { createdAt: string; permitHolders: PermitHolderAdminDto[]; permitHolderCount: number; activePermitHolderCount: number };
