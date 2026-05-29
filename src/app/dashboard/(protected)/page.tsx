@@ -2,13 +2,15 @@ import { Activity, Banknote, Clock, Smartphone, Users } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
 import { LatestMovements } from "@/components/dashboard/LatestMovements";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
+import { AiDailyInsightsCard } from "@/components/dashboard/AiDailyInsightsCard";
 import { formatCurrency, formatPercent } from "@/components/dashboard/format";
 import { getDashboardKpis, getLatestMovements, getRevenueChart } from "@/server/dashboard/queries";
+import { getDashboardAiInsights } from "@/server/dashboard/ai-insights";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardHomePage() {
-  const [kpis, chart, movements] = await Promise.all([getDashboardKpis(), getRevenueChart(), getLatestMovements()]);
+  const [kpis, chart, movements, aiInsights] = await Promise.all([getDashboardKpis(), getRevenueChart(), getLatestMovements(), getDashboardAiInsights()]);
   return (
     <div className="space-y-8">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -18,6 +20,7 @@ export default async function DashboardHomePage() {
         <MetricCard label="Pendientes" value={String(kpis.pendingPayments)} hint="Pagos por confirmar" icon={<Clock className="size-6" />} />
         <MetricCard label="Pagos digitales" value={formatPercent(kpis.digitalSharePercent)} hint="Sobre cobros confirmados" icon={<Smartphone className="size-6" />} />
       </section>
+      <AiDailyInsightsCard insights={aiInsights} />
       <section className="grid gap-6 lg:grid-cols-[1.45fr_0.9fr]">
         <article className="rounded-card border border-border bg-surface p-6 shadow-sm">
           <h2 className="text-xl font-extrabold text-brand-strong">Recaudación últimos 7 días</h2>
