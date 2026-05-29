@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import type { DashboardKpisDto, LatestMovementDto, OperationDetailDto, OperationFilters, OperationListDto, OperationRowDto, PaymentMethod, PaymentStatus, PermitHolderAdminDto, RevenuePointDto, TariffDto, VehicleKind, ZoneDto } from "@/contracts/dashboard";
+import type { DashboardKpisDto, LatestMovementDto, OperationDetailDto, OperationFilters, OperationListDto, OperationRowDto, PaymentMethod, PaymentStatus, PermitHolderAdminDto, RevenuePointDto, TariffDto, VehicleKind, ZoneAdminDto, ZoneDto } from "@/contracts/dashboard";
 import { normalizeOperationDateFilter } from "@/lib/operation-date-filters";
 
 type PaymentRow = {
@@ -12,6 +12,7 @@ type PaymentRow = {
 
 type PermitHolderRow = { id: string; zone_id: string; display_name: string; file_number: string; active: boolean; created_at: string; zones: { id: string; name: string } | null; permit_holder_accounts: Array<{ id: string; username: string; active: boolean; password_updated_at: string }> | null };
 type TariffRow = { id: string; zone_id: string; vehicle_kind: VehicleKind; label: string; hourly_rate_cents: number; digital_discount_percent: number; active: boolean; created_at: string; zones: { id: string; name: string } | null };
+type ZoneAdminRow = { id: string; name: string; active: boolean; created_at: string; permit_holders: Array<{ id: string; zone_id: string; display_name: string; file_number: string; active: boolean; created_at: string; permit_holder_accounts: Array<{ id: string; username: string; active: boolean; password_updated_at: string }> | null }> | null };
 type OperationFilterQuery = {
   gte(column: string, value: string): OperationFilterQuery;
   lte(column: string, value: string): OperationFilterQuery;
@@ -140,6 +141,17 @@ export async function getZones(): Promise<ZoneDto[]> {
   return (data ?? []) as ZoneDto[];
 }
 
+export async function getAdminZones(): Promise<ZoneAdminDto[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("zones")
+    .select("id, name, active, created_at, permit_holders(id, zone_id, display_name, file_number, active, created_at, permit_holder_accounts(id, username, active, password_updated_at))")
+    .order("active", { ascending: false })
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as ZoneAdminRow[]).map(mapAdminZone);
+}
+
 export async function getExportOperations(filters: OperationFilters = {}) {
   return getOperations({ ...filters, page: 1, pageSize: 1000 });
 }
@@ -176,6 +188,11 @@ function mapPermitHolder(row: PermitHolderRow): PermitHolderAdminDto {
 
 function mapTariff(row: TariffRow): TariffDto {
   return { id: row.id, zoneId: row.zone_id, zoneName: row.zones?.name ?? "Sin zona", vehicleKind: row.vehicle_kind, label: row.label, hourlyRateCents: row.hourly_rate_cents, digitalDiscountPercent: row.digital_discount_percent, active: row.active, createdAt: row.created_at };
+}
+
+function mapAdminZone(row: ZoneAdminRow): ZoneAdminDto {
+  const permitHolders = (row.permit_holders ?? []).map((holder) => mapPermitHolder({ ...holder, zones: { id: row.id, name: row.name } }));
+  return { id: row.id, name: row.name, active: row.active, createdAt: row.created_at, permitHolders, permitHolderCount: permitHolders.length, activePermitHolderCount: permitHolders.filter((holder) => holder.active).length };
 }
 
 function startOfToday() { const date = new Date(); date.setHours(0, 0, 0, 0); return date.toISOString(); }

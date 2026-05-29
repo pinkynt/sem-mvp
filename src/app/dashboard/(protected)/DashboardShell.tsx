@@ -3,13 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BadgeDollarSign, LayoutDashboard, Menu, ReceiptText, Users, X } from "lucide-react";
+import { BadgeDollarSign, LayoutDashboard, MapPinned, Menu, ReceiptText, Users, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 const nav = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard },
   { href: "/dashboard/operaciones", label: "Operaciones", icon: ReceiptText },
+  { href: "/dashboard/zonas", label: "Zonas", icon: MapPinned },
   { href: "/dashboard/permisionarios", label: "Permisionarios", icon: Users },
   { href: "/dashboard/tarifas", label: "Tarifas", icon: BadgeDollarSign },
 ];
