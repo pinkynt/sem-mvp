@@ -5,6 +5,8 @@ const INSUFFICIENT_INSIGHT = "Aún no hay datos suficientes para generar una lec
 const TITLE: DashboardAiInsightsDto["title"] = "Lectura inteligente del día";
 const DEFAULT_KIMI_BASE_URL = "https://api.moonshot.ai/v1";
 const DEFAULT_KIMI_MODEL = "kimi-k2.6";
+const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1";
+const KIMI_CODE_MODEL = "kimi-for-coding";
 const MAX_INSIGHTS = 3;
 const MAX_CHAT_CHARS = 900;
 
@@ -127,17 +129,17 @@ async function getInsightMetrics(): Promise<InsightMetrics> {
 }
 
 async function getKimiInsights(metrics: InsightMetrics): Promise<DashboardAiInsightsDto | null> {
-  const apiKey = process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY;
-  if (!apiKey) return null;
+  const config = getKimiConfig();
+  if (!config) return null;
 
-  const response = await fetch(`${process.env.KIMI_API_BASE_URL ?? DEFAULT_KIMI_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.KIMI_MODEL ?? DEFAULT_KIMI_MODEL,
+      model: config.model,
       temperature: 0.2,
       max_completion_tokens: 260,
       response_format: {
@@ -179,17 +181,17 @@ async function getKimiInsights(metrics: InsightMetrics): Promise<DashboardAiInsi
 }
 
 async function getKimiChatReply(question: string, metrics: InsightMetrics): Promise<string | null> {
-  const apiKey = process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY;
-  if (!apiKey) return null;
+  const config = getKimiConfig();
+  if (!config) return null;
 
-  const response = await fetch(`${process.env.KIMI_API_BASE_URL ?? DEFAULT_KIMI_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.KIMI_MODEL ?? DEFAULT_KIMI_MODEL,
+      model: config.model,
       temperature: 0.2,
       max_completion_tokens: 420,
       response_format: {
@@ -228,6 +230,18 @@ async function getKimiChatReply(question: string, metrics: InsightMetrics): Prom
 
   const parsed = JSON.parse(content) as { reply?: unknown };
   return normalizeChatReply(parsed.reply);
+}
+
+function getKimiConfig() {
+  const apiKey = process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY;
+  if (!apiKey) return null;
+
+  const isKimiCodeKey = apiKey.startsWith("sk-kimi-");
+  return {
+    apiKey,
+    baseUrl: process.env.KIMI_API_BASE_URL ?? (isKimiCodeKey ? KIMI_CODE_BASE_URL : DEFAULT_KIMI_BASE_URL),
+    model: process.env.KIMI_MODEL ?? (isKimiCodeKey ? KIMI_CODE_MODEL : DEFAULT_KIMI_MODEL),
+  };
 }
 
 function buildDeterministicInsights(metrics: InsightMetrics): DashboardAiInsightsDto {
