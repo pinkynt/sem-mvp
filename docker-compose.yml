@@ -1,5 +1,6 @@
 services:
   node:
+    profiles: ["dev"]
     image: node:22-alpine
     container_name: sem-mvp-node
     working_dir: /app
@@ -22,6 +23,7 @@ services:
         condition: service_completed_successfully
 
   deps:
+    profiles: ["dev"]
     image: node:22-alpine
     container_name: sem-mvp-deps
     working_dir: /app
