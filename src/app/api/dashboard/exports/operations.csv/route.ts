@@ -1,0 +1,6 @@
+import { dashboardApiError, requireDashboardUser } from "@/server/dashboard/auth";
+import { csvResponse, toCsv } from "@/server/dashboard/csv";
+import { getExportOperations } from "@/server/dashboard/queries";
+import type { PaymentMethod, PaymentStatus } from "@/contracts/dashboard";
+export const runtime = "nodejs"; export const dynamic = "force-dynamic";
+export async function GET(request: Request) { try { await requireDashboardUser(); const url = new URL(request.url); const { rows } = await getExportOperations({ status: (url.searchParams.get("status") as PaymentStatus | "all" | null) || "all", method: (url.searchParams.get("method") as PaymentMethod | "all" | null) || "all", plate: url.searchParams.get("plate") ?? undefined, zoneId: url.searchParams.get("zoneId") ?? undefined, permitHolderId: url.searchParams.get("permitHolderId") ?? undefined, from: url.searchParams.get("from") ?? undefined, to: url.searchParams.get("to") ?? undefined }); return csvResponse("operaciones-sem.csv", toCsv(["Patente", "Zona", "Permisionario", "Legajo", "Medio", "Estado", "Monto centavos", "Fecha"], rows.map((row) => [row.licensePlate, row.zoneName, row.permitHolderName, row.permitHolderFileNumber, row.method, row.status, row.amountCents, row.createdAt]))); } catch (error) { return dashboardApiError(error); } }
