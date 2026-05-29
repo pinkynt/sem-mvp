@@ -6,6 +6,7 @@ export type VehicleKind = "auto" | "moto";
 export type DashboardUser = { id: string; email: string; displayName: string; role: DashboardRole };
 export type DashboardKpisDto = { todayRevenueCents: number; todayPayments: number; activeSessions: number; permitHolders: number; pendingPayments: number; digitalSharePercent: number };
 export type DashboardAiInsightsDto = { title: "Lectura inteligente del día"; insights: string[] };
+export type DashboardAiChatDto = { reply: string };
 export type RevenuePointDto = { date: string; cashCents: number; digitalCents: number; confirmedCount: number };
 export type LatestMovementDto = { id: string; type: "payment" | "session"; title: string; detail: string; amountCents: number | null; status: PaymentStatus | "active" | "closed"; createdAt: string };
 export type OperationFilters = { from?: string; to?: string; status?: PaymentStatus | "all"; method?: PaymentMethod | "all"; plate?: string; zoneId?: string; permitHolderId?: string; page?: number; pageSize?: number };

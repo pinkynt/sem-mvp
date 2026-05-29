@@ -1,11 +1,12 @@
 import { createAdminClient } from "@/utils/supabase/admin";
-import type { DashboardAiInsightsDto, PaymentMethod, PaymentStatus } from "@/contracts/dashboard";
+import type { DashboardAiChatDto, DashboardAiInsightsDto, PaymentMethod, PaymentStatus } from "@/contracts/dashboard";
 
 const INSUFFICIENT_INSIGHT = "Aún no hay datos suficientes para generar una lectura confiable.";
 const TITLE: DashboardAiInsightsDto["title"] = "Lectura inteligente del día";
 const DEFAULT_KIMI_BASE_URL = "https://api.moonshot.ai/v1";
 const DEFAULT_KIMI_MODEL = "kimi-k2.6";
 const MAX_INSIGHTS = 3;
+const MAX_CHAT_CHARS = 900;
 
 type InsightPaymentRow = {
   amount_cents: number;
@@ -55,6 +56,17 @@ export async function getDashboardAiInsights(): Promise<DashboardAiInsightsDto> 
 
   const kimiInsights = await getKimiInsights(metrics).catch(() => null);
   return kimiInsights ?? buildDeterministicInsights(metrics);
+}
+
+export async function askDashboardAiAssistant(message: string): Promise<DashboardAiChatDto> {
+  const question = message.trim().slice(0, 500);
+  if (!question) return { reply: "Escribí una pregunta sobre la operación del día para poder ayudarte." };
+
+  const metrics = await getInsightMetrics();
+  if (!hasEnoughData(metrics)) return { reply: INSUFFICIENT_INSIGHT };
+
+  const kimiReply = await getKimiChatReply(question, metrics).catch(() => null);
+  return { reply: kimiReply ?? buildDeterministicChatReply(question, metrics) };
 }
 
 async function getInsightMetrics(): Promise<InsightMetrics> {
@@ -166,6 +178,58 @@ async function getKimiInsights(metrics: InsightMetrics): Promise<DashboardAiInsi
   return normalizeInsights(JSON.parse(content));
 }
 
+async function getKimiChatReply(question: string, metrics: InsightMetrics): Promise<string | null> {
+  const apiKey = process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY;
+  if (!apiKey) return null;
+
+  const response = await fetch(`${process.env.KIMI_API_BASE_URL ?? DEFAULT_KIMI_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.KIMI_MODEL ?? DEFAULT_KIMI_MODEL,
+      temperature: 0.2,
+      max_completion_tokens: 420,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "dashboard_ai_chat",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["reply"],
+            properties: {
+              reply: { type: "string" },
+            },
+          },
+        },
+      },
+      messages: [
+        {
+          role: "system",
+          content: "Sos el asistente operativo de SEM Digital para usuarios municipales. Respondé en español claro, institucional y breve. Usá únicamente los datos agregados provistos. No inventes datos, no hagas predicciones avanzadas, no menciones JSON, base de datos, endpoints, API ni cálculos internos. Si la pregunta no trata sobre métricas operativas del estacionamiento medido, explicá que solo podés ayudar con recaudación, pagos, zonas, permisionarios, horarios y sesiones.",
+        },
+        {
+          role: "user",
+          content: `Pregunta municipal: ${question}\n\nDatos agregados disponibles: ${JSON.stringify(metrics)}\n\nRespondé con un informe o respuesta breve. Si corresponde, usá hasta 4 puntos simples.`,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) return null;
+
+  const completion = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = completion.choices?.[0]?.message?.content;
+  if (!content) return null;
+
+  const parsed = JSON.parse(content) as { reply?: unknown };
+  return normalizeChatReply(parsed.reply);
+}
+
 function buildDeterministicInsights(metrics: InsightMetrics): DashboardAiInsightsDto {
   const insights: string[] = [];
   const revenueChange = percentChange(metrics.today.revenueCents, metrics.yesterday.revenueCents);
@@ -195,6 +259,42 @@ function buildDeterministicInsights(metrics: InsightMetrics): DashboardAiInsight
   return insights.length === 0 ? insufficientInsights() : { title: TITLE, insights: insights.slice(0, MAX_INSIGHTS) };
 }
 
+function buildDeterministicChatReply(question: string, metrics: InsightMetrics) {
+  const normalized = question.toLowerCase();
+
+  if (normalized.includes("zona")) {
+    if (!metrics.topZone || metrics.topZone.name === "Sin zona") return "No hay información suficiente por zona para responder con confianza.";
+    return `La zona con mayor actividad es ${metrics.topZone.name}, con ${metrics.topZone.count} operaciones confirmadas durante la jornada.`;
+  }
+
+  if (normalized.includes("permisionario")) {
+    if (!metrics.topPermitHolder || metrics.topPermitHolder.name === "Sin permisionario") return "No hay información suficiente por permisionario para responder con confianza.";
+    return `El permisionario con más operaciones es ${metrics.topPermitHolder.name}, con ${metrics.topPermitHolder.count} cobros confirmados hoy.`;
+  }
+
+  if (normalized.includes("medio") || normalized.includes("mercado") || normalized.includes("efectivo") || normalized.includes("pago")) {
+    const topMethod = getTopPaymentMethod(metrics);
+    if (!topMethod) return "Todavía no hay pagos confirmados suficientes para comparar medios de pago.";
+    return `El medio de pago más utilizado hoy fue ${topMethod}. Se registraron ${metrics.paymentMethods.digital.count} pagos por Mercado Pago y ${metrics.paymentMethods.cash.count} pagos en efectivo.`;
+  }
+
+  if (normalized.includes("hora") || normalized.includes("horario") || normalized.includes("mañana") || normalized.includes("tarde") || normalized.includes("noche")) {
+    const topBand = getTopTimeBand(metrics);
+    return topBand ? `La mayor actividad se concentró durante ${topBand}.` : "No hay una franja horaria claramente predominante con los datos actuales.";
+  }
+
+  if (normalized.includes("ayer") || normalized.includes("compar")) {
+    const change = percentChange(metrics.today.revenueCents, metrics.yesterday.revenueCents);
+    if (change === null) return "No hay datos suficientes de ayer para comparar la recaudación con confianza.";
+    const verb = change > 0 ? "aumentó" : change < 0 ? "disminuyó" : "se mantuvo estable";
+    const magnitude = change === 0 ? "" : ` un ${Math.abs(change)}%`;
+    return `La recaudación de hoy ${verb}${magnitude} respecto de ayer.`;
+  }
+
+  const dailyInsights = buildDeterministicInsights(metrics).insights;
+  return [`Informe breve del día:`, ...dailyInsights].join("\n");
+}
+
 function normalizeInsights(value: unknown): DashboardAiInsightsDto | null {
   if (!value || typeof value !== "object") return null;
   const insights = (value as { insights?: unknown }).insights;
@@ -207,6 +307,13 @@ function normalizeInsights(value: unknown): DashboardAiInsightsDto | null {
     .slice(0, MAX_INSIGHTS);
 
   return safeInsights.length === 0 ? null : { title: TITLE, insights: safeInsights };
+}
+
+function normalizeChatReply(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const reply = value.trim().slice(0, MAX_CHAT_CHARS);
+  if (!reply || containsTechnicalLanguage(reply)) return null;
+  return reply;
 }
 
 function hasEnoughData(metrics: InsightMetrics) {
