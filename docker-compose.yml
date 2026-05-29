@@ -6,16 +6,15 @@ services:
     working_dir: /app
     # Maps to host UID/GID 1000:1000 so files created in /app stay owned by you, not root.
     user: node
-    # No env_file here: the repo (incl. .env) is bind-mounted, and `next dev` reads
-    # .env itself with hot-reload. Injecting it via env_file would freeze values at
-    # container creation and shadow Next's live reload.
+    # Load local env into the dev process too. Next reads .env files, but server-only
+    # values must also be present in the container process for API routes.
     volumes:
       - .:/app
     ports:
       - "3000:3000"
       - "5173:5173"
     # Keep the container alive so you can exec in and run npm/npx on demand.
-    command: ["npm", "run", "dev"]
+    command: ["sh", "-lc", "set -a; [ -f .env ] && . ./.env; [ -f .env.local ] && . ./.env.local; set +a; npm run dev"]
     tty: true
     stdin_open: true
     depends_on:
