@@ -1,4 +1,38 @@
 services:
+  node:
+    image: node:22-alpine
+    container_name: sem-mvp-node
+    working_dir: /app
+    # Maps to host UID/GID 1000:1000 so files created in /app stay owned by you, not root.
+    user: node
+    # No env_file here: the repo (incl. .env) is bind-mounted, and `next dev` reads
+    # .env itself with hot-reload. Injecting it via env_file would freeze values at
+    # container creation and shadow Next's live reload.
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    # Keep the container alive so you can exec in and run npm/npx on demand.
+    command: ["npm", "run", "dev"]
+    tty: true
+    stdin_open: true
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+
+  deps:
+    image: node:22-alpine
+    container_name: sem-mvp-deps
+    working_dir: /app
+    # Same UID/GID mapping so node_modules stays owned by you, not root.
+    user: node
+    volumes:
+      - .:/app
+    # Installs into the shared bind mount and exits. `node` waits for this to
+    # finish successfully before starting the dev server.
+    command: ["npm", "install"]
+
   app:
     build:
       context: .
