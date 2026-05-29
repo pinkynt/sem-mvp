@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { LoginForm } from "@/app/dashboard/login/LoginForm";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -9,7 +10,10 @@ export default async function DashboardLoginPage({ searchParams }: { searchParam
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,oklch(0.95_0.03_250),transparent_34rem)] px-5 py-10">
       <section className="mx-auto grid max-w-5xl items-center gap-8 md:grid-cols-[1.1fr_0.9fr]">
         <div className="rounded-[2rem] bg-brand p-8 text-white shadow-xl">
-          <p className="text-sm font-bold uppercase tracking-[0.22em] text-white/75">SEM Digital</p>
+          <div className="inline-flex rounded-[1.25rem] bg-white/95 px-4 py-3 shadow-sm">
+            <Image src="/logo.png" alt="Municipalidad de Salta" width={220} height={94} priority className="h-16 w-auto" />
+          </div>
+          <p className="mt-6 text-sm font-bold uppercase tracking-[0.22em] text-white/75">SEM Digital</p>
           <h1 className="mt-4 text-4xl font-extrabold tracking-tight md:text-5xl">Panel municipal de control</h1>
           <p className="mt-5 max-w-prose text-lg text-white/82">Operaciones, permisionarios, tarifas y exportaciones del estacionamiento medido en una superficie institucional y segura.</p>
         </div>
