@@ -16,7 +16,7 @@ export default async function DashboardHomePage() {
         <MetricCard label="Sesiones activas" value={String(kpis.activeSessions)} hint="Estacionamientos en curso" icon={<Activity className="size-6" />} />
         <MetricCard label="Permisionarios" value={String(kpis.permitHolders)} hint="Activos en padrón" icon={<Users className="size-6" />} />
         <MetricCard label="Pendientes" value={String(kpis.pendingPayments)} hint="Pagos por confirmar" icon={<Clock className="size-6" />} />
-        <MetricCard label="Digital" value={formatPercent(kpis.digitalSharePercent)} hint="Participación confirmada" icon={<Smartphone className="size-6" />} />
+        <MetricCard label="Pagos digitales" value={formatPercent(kpis.digitalSharePercent)} hint="Sobre cobros confirmados" icon={<Smartphone className="size-6" />} />
       </section>
       <section className="grid gap-6 lg:grid-cols-[1.45fr_0.9fr]">
         <article className="rounded-card border border-border bg-surface p-6 shadow-sm">

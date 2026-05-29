@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { LatestMovementDto } from "@/contracts/dashboard";
 import { formatCurrency, formatDateTime } from "@/components/dashboard/format";
+
+const MOVEMENT_PREVIEW_LIMIT = 5;
 
 export function LatestMovements({ initialMovements }: { initialMovements: LatestMovementDto[] }) {
   const [movements, setMovements] = useState(initialMovements);
@@ -37,7 +40,8 @@ export function LatestMovements({ initialMovements }: { initialMovements: Latest
   return (
     <div className="space-y-3">
       <p className="rounded-input bg-brand-tint/55 px-3 py-2 text-sm font-semibold text-brand-strong" role="status">{status === "degraded" ? "Actualización en vivo degradada. Se reintentará automáticamente cada 15 segundos." : status === "checking" ? "Verificando canal en vivo. Hay respaldo por refresco cada 15 segundos." : "Canal en vivo no disponible en este entorno. Respaldo activo cada 15 segundos."}</p>
-      {movements.length === 0 ? <p className="text-sm text-ink-soft">Todavía no hay movimientos para mostrar.</p> : movements.map((movement) => (
+      <p className="text-sm font-semibold text-ink-soft">Mostrando hasta {MOVEMENT_PREVIEW_LIMIT} movimientos.</p>
+      {movements.length === 0 ? <p className="text-sm text-ink-soft">Todavía no hay movimientos para mostrar.</p> : movements.slice(0, MOVEMENT_PREVIEW_LIMIT).map((movement) => (
         <article key={movement.id} className="flex items-start justify-between gap-4 rounded-input bg-surface-muted p-3">
           <div>
             <h3 className="font-bold text-ink">{movement.title}</h3>
@@ -46,6 +50,7 @@ export function LatestMovements({ initialMovements }: { initialMovements: Latest
           <strong className="text-sm text-brand">{movement.amountCents === null ? "—" : formatCurrency(movement.amountCents)}</strong>
         </article>
       ))}
+      <Link href="/dashboard/operaciones" className="inline-flex rounded-pill border border-border px-4 py-2 text-sm font-bold text-brand hover:text-brand-strong">Ver más movimientos</Link>
     </div>
   );
 }
