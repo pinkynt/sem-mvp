@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/utils/supabase/admin";
 import type { DashboardKpisDto, LatestMovementDto, OperationDetailDto, OperationFilters, OperationListDto, OperationRowDto, PaymentMethod, PaymentStatus, PermitHolderAdminDto, RevenuePointDto, TariffDto, VehicleKind, ZoneDto } from "@/contracts/dashboard";
+import { normalizeOperationDateFilter } from "@/lib/operation-date-filters";
 
 type PaymentRow = {
   id: string; zone_id: string; permit_holder_id: string; parking_session_id: string | null; license_plate: string; vehicle_kind: VehicleKind; method: PaymentMethod; status: PaymentStatus; amount_cents: number; base_amount_cents: number; discount_cents: number; duration_minutes: number; valid_until: string | null; confirmed_at: string | null; created_at: string;
@@ -70,7 +71,7 @@ export async function getRevenueChart(days = 7): Promise<RevenuePointDto[]> {
   return Array.from(points.values());
 }
 
-export async function getLatestMovements(limit = 8): Promise<LatestMovementDto[]> {
+export async function getLatestMovements(limit = 5): Promise<LatestMovementDto[]> {
   const { rows } = await getOperations({ page: 1, pageSize: limit });
   return rows.map((row) => ({ id: row.id, type: "payment", title: `${row.licensePlate} · ${formatMethod(row.method)}`, detail: `${row.permitHolderName} · ${row.zoneName}`, amountCents: row.amountCents, status: row.status, createdAt: row.createdAt }));
 }
@@ -145,8 +146,10 @@ export async function getExportOperations(filters: OperationFilters = {}) {
 
 function applyOperationFilters<TQuery extends OperationFilterQuery>(query: TQuery, filters: OperationFilters): TQuery {
   let next = query;
-  if (filters.from) next = next.gte("created_at", filters.from) as TQuery;
-  if (filters.to) next = next.lte("created_at", filters.to) as TQuery;
+  const from = normalizeOperationDateFilter(filters.from, "start");
+  const to = normalizeOperationDateFilter(filters.to, "end");
+  if (from) next = next.gte("created_at", from) as TQuery;
+  if (to) next = next.lte("created_at", to) as TQuery;
   if (filters.status && filters.status !== "all") next = next.eq("status", filters.status) as TQuery;
   if (filters.method && filters.method !== "all") next = next.eq("method", filters.method) as TQuery;
   if (filters.zoneId) next = next.eq("zone_id", filters.zoneId) as TQuery;
