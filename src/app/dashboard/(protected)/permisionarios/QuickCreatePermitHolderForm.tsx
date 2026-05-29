@@ -41,18 +41,18 @@ export function QuickCreatePermitHolderForm({ zones }: { zones: ZoneDto[] }) {
 
   return (
     <form action={submit} className="mt-5 space-y-4">
-      <Field name="displayName" label="Nombre" required minLength={2} error={fieldError("displayName")} />
-      <Field name="fileNumber" label="Legajo" required minLength={1} error={fieldError("fileNumber")} />
+      <Field name="displayName" label="Nombre completo" required minLength={2} error={fieldError("displayName")} />
+      <Field name="fileNumber" label="Legajo municipal" required minLength={1} error={fieldError("fileNumber")} />
       <label className="block text-sm font-bold text-ink">
-        Zona
+        Zona asignada
         <select name="zoneId" required aria-invalid={fieldError("zoneId") ? true : undefined} aria-describedby={fieldError("zoneId") ? "zoneId-error" : undefined} className="mt-2 min-h-12 w-full rounded-input border border-border px-4">
           {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
         </select>
         {fieldError("zoneId") ? <span id="zoneId-error" className="mt-2 block text-sm font-semibold text-danger">{fieldError("zoneId")}</span> : null}
       </label>
-      <Field name="username" label="Clave" minLength={3} error={fieldError("username")} />
+      <Field name="username" label="Usuario de acceso" minLength={3} error={fieldError("username")} />
       <div>
-        <Field id="password" name="password" label="Contraseña" type="text" error={fieldError("password")} />
+        <Field id="password" name="password" label="Contraseña de acceso" type="text" error={fieldError("password")} />
         <div className="mt-2"><PasswordGenerateButton /></div>
         <p className="mt-2 text-xs text-ink-soft">Se guarda sólo hash scrypt. La contraseña no se puede recuperar.</p>
       </div>

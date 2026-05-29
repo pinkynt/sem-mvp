@@ -26,7 +26,7 @@ export const tariffSchema = z.object({
 
 export async function upsertPermitHolder(input: z.infer<typeof permitHolderSchema>, dashboardUserId: string) {
   const parsed = permitHolderSchema.parse(input);
-  if (!parsed.id && parsed.username && !parsed.password) throw new DashboardValidationError("Ingresá una contraseña inicial para la cuenta futura.", "password", "missing_password");
+  if (!parsed.id && parsed.username && !parsed.password) throw new DashboardValidationError("Ingresá una contraseña de acceso para el permisionario.", "password", "missing_password");
   const supabase = createAdminClient();
   const zoneId = await resolveZoneId(supabase, parsed.zoneId);
   const payload = { display_name: parsed.displayName, file_number: parsed.fileNumber, zone_id: zoneId, active: parsed.active };
@@ -58,13 +58,13 @@ export async function upsertPermitHolderAccount(input: { permitHolderId: string;
   const username = input.username.trim();
   const { data: existing, error: existingError } = await supabase.from("permit_holder_accounts").select("permit_holder_id").eq("username", username).maybeSingle();
   if (existingError) throw new Error(existingError.message);
-  if (existing && (existing as { permit_holder_id: string }).permit_holder_id !== input.permitHolderId) throw new DashboardValidationError("Ese usuario ya existe. Elegí otro nombre para la cuenta futura.", "username", "duplicate_username");
-  if (!existing && !input.password) throw new DashboardValidationError("Ingresá una contraseña inicial para la cuenta futura.", "password", "missing_password");
+  if (existing && (existing as { permit_holder_id: string }).permit_holder_id !== input.permitHolderId) throw new DashboardValidationError("Ese usuario de acceso ya existe. Elegí otro.", "username", "duplicate_username");
+  if (!existing && !input.password) throw new DashboardValidationError("Ingresá una contraseña de acceso para el permisionario.", "password", "missing_password");
   const base = { permit_holder_id: input.permitHolderId, username, active: input.active, created_by: input.dashboardUserId };
   const payload = input.password ? { ...base, password_hash: await hashPermitHolderPassword(input.password), password_updated_at: new Date().toISOString() } : base;
   const { error } = await supabase.from("permit_holder_accounts").upsert(payload, { onConflict: "permit_holder_id" });
   if (error) {
-    if (error.code === "23505") throw new DashboardValidationError("Ese usuario ya existe. Elegí otro nombre para la cuenta futura.", "username", "duplicate_username");
+    if (error.code === "23505") throw new DashboardValidationError("Ese usuario de acceso ya existe. Elegí otro.", "username", "duplicate_username");
     throw new Error(error.message);
   }
 }

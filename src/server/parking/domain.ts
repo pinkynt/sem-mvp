@@ -130,7 +130,7 @@ export async function getPermitHolderHome(): Promise<ParkingDashboardDto> {
   // Batch-fetch linked payments for all remaining active sessions so we can
   // populate the auxiliary DTO fields (validUntil, paymentId, paymentStatus).
   const activeIds = activeSessionRows.map((s) => s.id);
-  let linkedPaymentsBySessionId: Map<string, PaymentRow> = new Map();
+  const linkedPaymentsBySessionId: Map<string, PaymentRow> = new Map();
   if (activeIds.length > 0) {
     const { data: linkedPayments, error: linkedError } = await supabase
       .from("payments")

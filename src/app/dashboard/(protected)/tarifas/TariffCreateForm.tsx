@@ -51,30 +51,30 @@ export function TariffCreateForm({ zones }: { zones: ZoneDto[] }) {
   return (
     <form action={submit} className="mt-5 space-y-4">
       <label className="block text-sm font-bold text-ink">
-        Zona
+        Zona de aplicación
         <select name="zoneId" required aria-invalid={fieldError("zoneId") ? true : undefined} aria-describedby={fieldError("zoneId") ? "zoneId-error" : undefined} className="mt-2 min-h-12 w-full rounded-input border border-border px-4">
           {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
         </select>
         {fieldError("zoneId") ? <span id="zoneId-error" className="mt-2 block text-sm font-semibold text-danger">{fieldError("zoneId")}</span> : null}
       </label>
       <label className="block text-sm font-bold text-ink">
-        Tipo
+        Tipo de vehículo
         <select name="vehicleKind" className="mt-2 min-h-12 w-full rounded-input border border-border px-4">
           <option value="auto">Auto</option>
           <option value="moto">Moto</option>
         </select>
       </label>
-      <Field name="label" label="Etiqueta" minLength={2} error={fieldError("label")} />
+      <Field name="label" label="Nombre de la tarifa" minLength={2} error={fieldError("label")} />
       <label className="block text-sm font-bold text-ink" htmlFor="hourlyRatePesos">
-        Valor por hora
+        Precio por hora
         <span className="mt-2 flex min-h-12 items-center rounded-input border border-border px-4 focus-within:ring-4 focus-within:ring-brand/20">
           <span className="text-ink-soft">$</span>
           <input id="hourlyRatePesos" name="hourlyRatePesos" type="number" min="1" step="1" required aria-describedby="hourlyRatePesos-help" className="min-h-10 w-full border-0 bg-transparent px-2 outline-none" />
         </span>
-        <span id="hourlyRatePesos-help" className="mt-2 block text-xs font-semibold text-ink-soft">Ingresá el monto en pesos.</span>
+        <span id="hourlyRatePesos-help" className="mt-2 block text-xs font-semibold text-ink-soft">Ingresá el importe en pesos argentinos.</span>
         {fieldError("hourlyRateCents") ? <span className="mt-2 block text-sm font-semibold text-danger">{fieldError("hourlyRateCents")}</span> : null}
       </label>
-      <Field name="digitalDiscountPercent" label="Descuento digital (%)" type="number" min={0} max={100} error={fieldError("digitalDiscountPercent")} />
+      <Field name="digitalDiscountPercent" label="Descuento para pago digital (%)" type="number" min={0} max={100} error={fieldError("digitalDiscountPercent")} />
       {error?.error && !error.field ? <p className="rounded-input bg-danger/10 px-4 py-3 text-sm font-semibold text-danger" role="alert">{error.error}</p> : null}
       <button className="rounded-pill bg-brand px-5 py-3 text-sm font-bold text-white" type="submit">Activar tarifa</button>
       <p className="text-xs text-ink-soft">No existe borrado destructivo de tarifas. Al activar una nueva, la anterior queda histórica y los pagos conservan sus montos.</p>
