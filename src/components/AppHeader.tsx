@@ -12,7 +12,7 @@ export function AppHeader({ name, zone }: AppHeaderProps) {
       <div className="flex w-full items-center justify-between gap-3 px-4 py-4 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white">
-            <Image src="/logo.png" alt="SEM" width={44} height={44} className="size-8" priority />
+            <Image src="/brand-logo.png" alt="SEM" width={44} height={44} className="size-8" priority />
           </span>
           <span className="flex min-w-0 flex-col leading-tight">
             <span className="truncate text-base font-bold">Hola, {name}</span>
