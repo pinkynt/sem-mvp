@@ -54,24 +54,40 @@ export default function CobrarPage() {
   // QR polling — always kind="close" (this route is pospago-only per design D7)
   useEffect(() => {
     if (!pollingPaymentId) return;
-    const interval = window.setInterval(async () => {
+
+    const paymentId = pollingPaymentId;
+    let cancelled = false;
+
+    async function refreshQrPaymentStatus() {
       try {
-        const status = await getParkingPaymentStatus(pollingPaymentId);
-        setResult((current) =>
-          current?.kind === "qr" ? { ...current, status } : current,
-        );
+        const status = await getParkingPaymentStatus(paymentId);
+        if (cancelled) return;
+
         if (status.receipt) {
           setResult({
             kind: "close",
             receipt: status.receipt,
             method: "digital",
           });
+          return;
         }
+
+        setResult((current) =>
+          current?.kind === "qr" && current.paymentId === paymentId
+            ? { ...current, status }
+            : current,
+        );
       } catch {
-        // Polling is best-effort
+        // Status refresh is best-effort; MercadoPago confirmation still arrives by webhook.
       }
-    }, 5000);
-    return () => window.clearInterval(interval);
+    }
+
+    void refreshQrPaymentStatus();
+    const interval = window.setInterval(() => void refreshQrPaymentStatus(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [pollingPaymentId]);
 
   async function choosePayment(nextPayment: PaymentId) {
