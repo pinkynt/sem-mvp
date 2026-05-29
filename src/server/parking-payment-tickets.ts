@@ -89,11 +89,16 @@ export async function getParkingPaymentTicketByExternalId(
 
 export async function syncParkingPaymentTicketFromMercadoPagoOrder(
   order: MercadoPagoQrOrderResponse,
-): Promise<ParkingPaymentTicket> {
+): Promise<ParkingPaymentTicket | null> {
   const externalId = order.external_reference;
 
   if (!externalId) {
     throw new Error("MercadoPago order is missing external_reference");
+  }
+
+  const existingTicket = await getParkingPaymentTicketByExternalId(externalId);
+  if (!existingTicket) {
+    return null;
   }
 
   const payment = order.transactions?.payments?.[0];

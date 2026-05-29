@@ -109,12 +109,19 @@ export default function PermisionarioPage() {
     void loadDashboard();
   }, []);
 
+  const qrPaymentId = result?.kind === "qr" ? result.paymentId : null;
+
   useEffect(() => {
-    if (result?.kind !== "qr") return;
-    const interval = window.setInterval(async () => {
+    if (!qrPaymentId) return;
+
+    const paymentId = qrPaymentId;
+    let cancelled = false;
+
+    async function refreshQrPaymentStatus() {
       try {
-        const status = await getParkingPaymentStatus(result.paymentId);
-        setResult((current) => current?.kind === "qr" ? { ...current, status } : current);
+        const status = await getParkingPaymentStatus(paymentId);
+        if (cancelled) return;
+
         if (status.receipt) {
           setResult({
             kind: status.payment.sessionId ? "close" : "prepago",
@@ -122,13 +129,22 @@ export default function PermisionarioPage() {
             method: "digital",
           });
           await loadDashboard(false);
+          return;
         }
+
+        setResult((current) => current?.kind === "qr" && current.paymentId === paymentId ? { ...current, status } : current);
       } catch {
-        // Polling is best-effort; the user can retry by starting a new flow.
+        // Status refresh is best-effort; MercadoPago confirmation still arrives by webhook.
       }
-    }, 5000);
-    return () => window.clearInterval(interval);
-  }, [result]);
+    }
+
+    void refreshQrPaymentStatus();
+    const interval = window.setInterval(() => void refreshQrPaymentStatus(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [qrPaymentId]);
 
   const vehicle = dashboard?.tariffs.find((item) => item.vehicleKind === vehicleKind) ?? null;
   const duration = DURATIONS.find((item) => item.id === timeId) ?? null;

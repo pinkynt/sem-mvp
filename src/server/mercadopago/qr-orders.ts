@@ -81,7 +81,7 @@ export async function createMercadoPagoQrOrder({
     orderId: order.id,
     paymentId: order.transactions?.payments?.[0]?.id,
     externalId: order.external_reference,
-    amount: order.total_amount,
+    amount: order.total_amount == null ? undefined : String(order.total_amount),
     description: order.description,
     status: order.status,
     statusDetail: order.status_detail,
