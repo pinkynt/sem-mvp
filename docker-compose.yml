@@ -1,16 +1,29 @@
 services:
-  node:
-    image: node:22-alpine
-    container_name: sem-mvp-node
-    working_dir: /app
-    # Maps to host UID/GID 1000:1000 so files created in /app stay owned by you, not root.
-    user: node
-    volumes:
-      - .:/app
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_SEM_DEMO_API_KEY: ${NEXT_PUBLIC_SEM_DEMO_API_KEY:-}
     ports:
-      - "3000:3000"
-      - "5173:5173"
-    # Keep the container alive so you can exec in and run npm/npx on demand.
-    command: sleep infinity
-    tty: true
-    stdin_open: true
+      - "3011:3011"
+    environment:
+      NODE_ENV: production
+      PORT: 3011
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      MERCADOPAGO_APPLICATION_ID: ${MERCADOPAGO_APPLICATION_ID:-}
+      MERCADOPAGO_USER_ID: ${MERCADOPAGO_USER_ID:-}
+      MERCADOPAGO_PUBLIC_KEY: ${MERCADOPAGO_PUBLIC_KEY:-}
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
+      MERCADOPAGO_STORE_EXTERNAL_ID: ${MERCADOPAGO_STORE_EXTERNAL_ID:-}
+      MERCADOPAGO_POS_EXTERNAL_ID: ${MERCADOPAGO_POS_EXTERNAL_ID:-}
+      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-}
+      MERCADOPAGO_PROVISIONING_KEY: ${MERCADOPAGO_PROVISIONING_KEY:-}
+      SEM_DEMO_API_KEY: ${SEM_DEMO_API_KEY:-}
+      SEM_DEMO_PERMIT_HOLDER_LEGAJO: ${SEM_DEMO_PERMIT_HOLDER_LEGAJO:-DEMO-001}
+      NEXT_PUBLIC_SEM_DEMO_API_KEY: ${NEXT_PUBLIC_SEM_DEMO_API_KEY:-}
+    restart: unless-stopped

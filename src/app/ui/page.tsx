@@ -5,7 +5,6 @@ import {
   Clock,
   Banknote,
   QrCode,
-  CreditCard,
   Car,
   TicketCheck,
   Wallet,
@@ -30,7 +29,6 @@ const TIME_OPTIONS = [
 const PAYMENT_OPTIONS = [
   { id: "efectivo", label: "Efectivo", icon: <Banknote className="size-6" /> },
   { id: "qr", label: "QR Mercado Pago", icon: <QrCode className="size-6" /> },
-  { id: "tarjeta", label: "Tarjeta", icon: <CreditCard className="size-6" /> },
 ] as const;
 
 type PaymentId = (typeof PAYMENT_OPTIONS)[number]["id"];
@@ -52,7 +50,7 @@ export default function Home() {
   } | null>(null);
 
   const time = TIME_OPTIONS.find((t) => t.id === timeId) ?? null;
-  const isDigital = payment === "qr" || payment === "tarjeta";
+  const isDigital = payment === "qr";
 
   const total = useMemo(() => {
     if (!time) return null;
@@ -68,9 +66,7 @@ export default function Home() {
       ? "Cobré en efectivo"
       : payment === "qr"
         ? "Mostrar QR Mercado Pago"
-        : payment === "tarjeta"
-          ? "Cobrar con tarjeta"
-          : "Confirmar cobro";
+        : "Confirmar cobro";
 
   function confirm() {
     if (!time || !payment) return;
