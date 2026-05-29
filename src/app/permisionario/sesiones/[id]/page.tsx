@@ -3,27 +3,11 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { Banknote, Bike, Car, ChevronLeft, ChevronRight, Clock, QrCode } from "lucide-react";
-import { AppHeader, Button, ChoiceButton, StatusBadge } from "@/components";
-import type { ParkingDashboardDto, ParkingSessionDetailDto, PaymentMethod } from "@/contracts/parking";
-import {
-  createParkingPayment,
-  getParkingPaymentStatus,
-  getParkingSession,
-  getPermitHolderHome,
-} from "@/features/parking/api";
+import { Bike, Car, ChevronLeft, ChevronRight, QrCode } from "lucide-react";
+import { AppHeader, Button, StatusBadge } from "@/components";
+import type { ParkingSessionDetailDto } from "@/contracts/parking";
+import { getParkingPaymentStatus, getParkingSession } from "@/features/parking/api";
 import { displayPlate, elapsedLabel, money, timeLabel } from "@/lib/parking-format";
-
-const DURATIONS = [
-  { id: "1h", label: "1 hora", minutes: 60 },
-  { id: "2h", label: "2 horas", minutes: 120 },
-  { id: "3h", label: "3 horas", minutes: 180 },
-];
-
-const PAYMENT_OPTIONS = [
-  { id: "cash", label: "Efectivo", icon: <Banknote className="size-6" /> },
-  { id: "digital", label: "QR Mercado Pago", icon: <QrCode className="size-6" /> },
-] as const;
 
 export default function SessionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -31,13 +15,8 @@ export default function SessionDetailPage() {
   const id = params.id;
 
   const [detail, setDetail] = useState<ParkingSessionDetailDto | null>(null);
-  const [dashboard, setDashboard] = useState<ParkingDashboardDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [timeId, setTimeId] = useState<string | null>(null);
-  const [charging, setCharging] = useState(false);
-  const [chargeError, setChargeError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -59,14 +38,6 @@ export default function SessionDetailPage() {
       active = false;
     };
   }, [id]);
-
-  useEffect(() => {
-    let active = true;
-    getPermitHolderHome()
-      .then((data) => { if (active) setDashboard(data); })
-      .catch(() => { /* non-critical: tariffs used for pricing only */ });
-    return () => { active = false; };
-  }, []);
 
   const session = detail?.session;
   const payment = detail?.payment;
@@ -98,31 +69,6 @@ export default function SessionDetailPage() {
 
   const needsPrepaidCharge =
     session?.kind === "prepago" && session.status === "active" && !payment;
-  const vehicle = dashboard?.tariffs.find((item) => item.vehicleKind === session?.vehicleKind) ?? null;
-
-  async function chargePrepaid(method: PaymentMethod) {
-    if (!session || !timeId) return;
-    const duration = DURATIONS.find((item) => item.id === timeId);
-    if (!duration) return;
-    setCharging(true);
-    setChargeError(null);
-    try {
-      await createParkingPayment({
-        licensePlate: session.licensePlate,
-        vehicleKind: session.vehicleKind,
-        method,
-        durationMinutes: duration.minutes,
-        sessionId: session.id,
-      });
-      const updated = await getParkingSession(id);
-      setDetail(updated);
-      setTimeId(null);
-    } catch (submitError) {
-      setChargeError(submitError instanceof Error ? submitError.message : "No se pudo registrar el cobro");
-    } finally {
-      setCharging(false);
-    }
-  }
 
   return (
     <main className="flex h-dvh w-full flex-col overflow-hidden bg-surface">
@@ -186,57 +132,18 @@ export default function SessionDetailPage() {
               )}
             </dl>
 
-            {/* Prepago active without payment — choose time + method to charge */}
+            {/* Prepago active without payment — charge happens in the dedicated /prepago route */}
             {needsPrepaidCharge && (
-              <div className="flex flex-col gap-4">
-                {chargeError && (
-                  <div className="rounded-card border border-danger/20 bg-danger/5 px-4 py-3 text-sm font-semibold text-danger">
-                    {chargeError}
-                  </div>
-                )}
-
-                {!timeId ? (
-                  <>
-                    <h2 className="text-2xl font-extrabold tracking-tight text-ink">Elegí el tiempo</h2>
-                    <div className="flex flex-col gap-3">
-                      {DURATIONS.map((opt) => (
-                        <ChoiceButton
-                          key={opt.id}
-                          label={opt.label}
-                          icon={<Clock className="size-6" />}
-                          price={vehicle ? money((vehicle.hourlyRateCents * opt.minutes) / 60) : undefined}
-                          onClick={() => setTimeId(opt.id)}
-                        />
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-2xl font-extrabold tracking-tight text-ink">¿Cómo paga?</h2>
-                      <button
-                        type="button"
-                        onClick={() => setTimeId(null)}
-                        className="text-sm font-semibold text-brand outline-none hover:underline focus-visible:ring-4 focus-visible:ring-brand/30"
-                      >
-                        Cambiar tiempo
-                      </button>
-                    </div>
-                    <div className="flex flex-col gap-3">
-                      {PAYMENT_OPTIONS.map((opt) => (
-                        <ChoiceButton
-                          key={opt.id}
-                          label={opt.label}
-                          icon={opt.icon}
-                          onClick={() => void chargePrepaid(opt.id)}
-                        />
-                      ))}
-                    </div>
-                    {charging && (
-                      <p className="text-center text-sm font-semibold text-ink-soft">Procesando cobro...</p>
-                    )}
-                  </>
-                )}
+              <div className="mt-auto">
+                <Button
+                  fullWidth
+                  onClick={() => router.push(`/permisionario/sesiones/${session.id}/prepago`)}
+                >
+                  <span className="flex items-center gap-2">
+                    Completar cobro
+                    <ChevronRight className="size-5" aria-hidden />
+                  </span>
+                </Button>
               </div>
             )}
 

@@ -59,7 +59,7 @@ export default function NuevaPage() {
         setPospagoDone(true);
         return;
       }
-      router.push(`/permisionario/sesiones/${response.session.id}`);
+      router.push(`/permisionario/sesiones/${response.session.id}/prepago`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "No se pudo crear la sesión");
       setSubmitting(false);
