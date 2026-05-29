@@ -23,6 +23,11 @@ export const tariffSchema = z.object({
   hourlyRateCents: z.coerce.number().int().positive("Ingresá un valor por hora válido."),
   digitalDiscountPercent: z.coerce.number().int().min(0, "El descuento no puede ser negativo.").max(100, "El descuento no puede superar el 100%."),
 });
+export const zoneSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(2, "Ingresá un nombre de zona de al menos 2 caracteres."),
+  active: z.boolean().default(true),
+});
 
 export async function upsertPermitHolder(input: z.infer<typeof permitHolderSchema>, dashboardUserId: string) {
   const parsed = permitHolderSchema.parse(input);
@@ -84,4 +89,25 @@ export async function createTariff(input: z.infer<typeof tariffSchema>) {
   const { data, error } = await supabase.from("tariffs").insert({ zone_id: zoneId, vehicle_kind: parsed.vehicleKind, label: parsed.label, hourly_rate_cents: parsed.hourlyRateCents, digital_discount_percent: parsed.digitalDiscountPercent, active: true }).select("id").single();
   if (error) throw new Error(error.message);
   return data as { id: string };
+}
+
+export async function upsertZone(input: z.infer<typeof zoneSchema>) {
+  const parsed = zoneSchema.parse(input);
+  const supabase = createAdminClient();
+  const payload = { name: parsed.name, active: parsed.active };
+  const { data, error } = parsed.id
+    ? await supabase.from("zones").update(payload).eq("id", parsed.id).select("id").single()
+    : await supabase.from("zones").insert(payload).select("id").single();
+  if (error) {
+    if (error.code === "23505") throw new DashboardValidationError("Ya existe una zona con ese nombre.", "name", "duplicate_zone");
+    throw new Error(error.message);
+  }
+  return data as { id: string };
+}
+
+export async function deleteZone(id: string) {
+  if (!uuidPattern.test(id)) throw new DashboardValidationError("Seleccioná una zona válida.", "id", "invalid_zone");
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("zones").update({ active: false }).eq("id", id);
+  if (error) throw new Error(error.message);
 }
