@@ -1,6 +1,9 @@
 import { getMercadoPagoConfig } from "@/server/mercadopago/config";
 import { getMercadoPagoQrOrder } from "@/server/mercadopago/qr-orders";
-import type { MercadoPagoOrderWebhookBody } from "@/server/mercadopago/types";
+import type {
+  MercadoPagoOrderWebhookBody,
+  MercadoPagoQrOrderResponse,
+} from "@/server/mercadopago/types";
 import { verifyMercadoPagoWebhookSignature } from "@/server/mercadopago/webhooks";
 import { applyMercadoPagoOrderToPayment } from "@/server/parking/domain";
 import { syncParkingPaymentTicketFromMercadoPagoOrder } from "@/server/parking-payment-tickets";
@@ -29,7 +32,7 @@ export async function POST(request: NextRequest) {
     const isValidSignature = verifyMercadoPagoWebhookSignature({
       xSignature: request.headers.get("x-signature"),
       xRequestId: request.headers.get("x-request-id"),
-      dataId: queryDataId,
+      dataId: orderId,
       secret: webhookSecret,
     });
 
@@ -43,7 +46,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const order = await getMercadoPagoQrOrder(orderId);
+    const order = await resolveWebhookOrder(body, orderId);
     await applyMercadoPagoOrderToPayment(order);
 
     await syncParkingPaymentTicketFromMercadoPagoOrder(order);
@@ -60,6 +63,30 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+async function resolveWebhookOrder(
+  body: MercadoPagoOrderWebhookBody,
+  orderId: string,
+): Promise<MercadoPagoQrOrderResponse> {
+  if (isEmbeddedOrder(body.data)) {
+    return { ...body.data, id: body.data.id ?? orderId };
+  }
+
+  return getMercadoPagoQrOrder(orderId);
+}
+
+function isEmbeddedOrder(
+  data: MercadoPagoOrderWebhookBody["data"],
+): data is Partial<MercadoPagoQrOrderResponse> & { id?: string } {
+  return Boolean(
+    data &&
+      (data.external_reference ||
+        data.status ||
+        data.status_detail ||
+        data.total_paid_amount ||
+        data.transactions),
+  );
 }
 
 function parseWebhookBody(rawBody: string): MercadoPagoOrderWebhookBody | null {

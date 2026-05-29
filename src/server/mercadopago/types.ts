@@ -37,13 +37,13 @@ export type MercadoPagoPosResponse = {
 export type MercadoPagoQrOrderResponse = {
   id: string;
   user_id?: string;
-  type?: "qr";
+  type?: string;
   external_reference?: string;
   description?: string;
   expiration_time?: string;
   processing_mode?: string;
-  total_amount?: string;
-  total_paid_amount?: string;
+  total_amount?: string | number;
+  total_paid_amount?: string | number;
   country_code?: string;
   status?: string;
   status_detail?: string;
@@ -59,15 +59,18 @@ export type MercadoPagoQrOrderResponse = {
   transactions?: {
     payments?: Array<{
       id?: string;
-      amount?: string;
-      paid_amount?: string;
-      refunded_amount?: string;
+      amount?: string | number;
+      paid_amount?: string | number;
+      refunded_amount?: string | number;
       status?: string;
       status_detail?: string;
       payment_method?: {
         id?: string;
         type?: string;
         installments?: number;
+      };
+      reference?: {
+        id?: string | number;
       };
     }>;
     refunds?: Array<{
@@ -86,14 +89,7 @@ export type MercadoPagoOrderWebhookBody = {
   action?: string;
   api_version?: string;
   application_id?: string;
-  data?: {
-    id?: string;
-    external_reference?: string;
-    status?: string;
-    status_detail?: string;
-    total_amount?: string;
-    total_paid_amount?: string;
-  };
+  data?: Partial<MercadoPagoQrOrderResponse>;
   date_created?: string;
   live_mode?: boolean;
   type?: string;
