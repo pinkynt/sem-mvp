@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { Banknote, CheckCircle2, ChevronLeft, Clock, QrCode } from "lucide-react";
+import { Banknote, Bike, Car, CheckCircle2, ChevronLeft, Clock, QrCode } from "lucide-react";
 import { AppHeader, Button, ChoiceButton, StatusBadge } from "@/components";
 import type {
   ParkingDashboardDto,
@@ -227,9 +227,14 @@ export default function PrepagoChargePage() {
         )}
 
         {session && step !== "done" && (
-          <p className="text-sm font-semibold text-ink-soft">
-            Patente {displayPlate(session.licensePlate)} · {session.vehicleLabel}
-          </p>
+          <div className="flex items-center gap-3 rounded-card border border-border bg-surface p-4">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-surface-muted text-brand" aria-hidden>
+              {session.vehicleKind === "auto" ? <Car className="size-6" /> : <Bike className="size-6" />}
+            </span>
+            <span className="min-w-0 text-xl font-bold tracking-wide text-ink">
+              {displayPlate(session.licensePlate)}
+            </span>
+          </div>
         )}
 
         {session && step === "time" && (
