@@ -1,3 +1,4 @@
+// Public GET — no permit-holder session required (MercadoPago webhook lookup)
 import { getParkingPaymentTicketByExternalId } from "@/server/parking-payment-tickets";
 
 export const runtime = "nodejs";

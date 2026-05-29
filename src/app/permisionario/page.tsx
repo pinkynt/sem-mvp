@@ -35,11 +35,20 @@ export default function PermisionarioPage() {
     };
   }, []);
 
+  async function handleLogout() {
+    await fetch("/api/permisionario/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+    window.location.assign("/permisionario/login");
+  }
+
   return (
     <main className="flex h-dvh w-full flex-col overflow-hidden bg-surface">
       <AppHeader
-        name={dashboard?.permitHolder.displayName.split(" ")[0] ?? "Juan"}
-        zone={dashboard?.permitHolder.zone.name ?? "Centro A"}
+        name={dashboard?.permitHolder.displayName.split(" ")[0] ?? ""}
+        zone={dashboard?.permitHolder.zone.name ?? ""}
+        onLogout={handleLogout}
       />
 
       <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4 outline-none sm:gap-6 sm:p-6">

@@ -1,4 +1,4 @@
-import { authorizeDemoMutation } from "@/server/parking/demo-guard";
+import { readPermitHolderSession } from "@/server/permisionario/auth";
 import { createParkingPaymentQrTicket } from "@/server/parking-payment-tickets";
 
 export const runtime = "nodejs";
@@ -11,8 +11,10 @@ type CreatePaymentTicketBody = {
 };
 
 export async function POST(request: Request) {
-  const authorizationError = authorizeDemoMutation(request);
-  if (authorizationError) return authorizationError;
+  const session = await readPermitHolderSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const body = (await request.json()) as CreatePaymentTicketBody;
 

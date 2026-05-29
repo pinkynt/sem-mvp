@@ -8,7 +8,7 @@ The permit-holder UI now talks to parking API routes instead of mocked arrays. F
 2. UI calls browser-safe functions from `src/features/parking/api.ts`.
 3. API routes under `src/app/api/parking/**` call `src/server/parking/domain.ts`.
 4. The server domain uses the Supabase admin client and MercadoPago QR helpers.
-5. Demo mutation routes require `x-sem-demo-key` matching server-side `SEM_DEMO_API_KEY`.
+5. Permit-holder mutation routes require a valid `sem_ph_session` JWT cookie issued by `POST /api/permisionario/auth/login`.
 
 ## Boundaries
 
@@ -31,17 +31,17 @@ The permit-holder UI now talks to parking API routes instead of mocked arrays. F
 | `POST` | `/api/parking/sessions/[id]/quote-close` | Quote closing an active session |
 | `POST` | `/api/parking/sessions/[id]/close` | Close an active session with cash or digital payment |
 
-## Demo Mutation Guard
+## Permit-Holder Session Auth
 
-All parking `POST` routes use Supabase service-role access, so they are explicitly guarded for the MVP demo:
+All parking mutation routes and the `/permisionario/**` pages require a valid httpOnly JWT session cookie (`sem_ph_session`).
 
 | Setting | Use |
 |---------|-----|
-| `SEM_DEMO_API_KEY` | Server-only required key for parking mutation routes |
-| `NEXT_PUBLIC_SEM_DEMO_API_KEY` | Optional browser demo key forwarded as `x-sem-demo-key` by `src/features/parking/api.ts` |
-| `SEM_DEMO_PERMIT_HOLDER_LEGAJO` | Server-side demo permit holder file number, defaulting to `DEMO-001` |
+| `PERMIT_HOLDER_SESSION_SECRET` | Server-only HS256 signing secret (≥32 random bytes). Required at boot. |
 
-This is not real user authentication. A public browser key can protect against accidental open calls, but it is visible to anyone using the deployed app. For a public deployment, use a server action/proxy or real auth session before exposing mutation routes.
+Cookie is issued on successful `POST /api/permisionario/auth/login` and cleared on `POST /api/permisionario/auth/logout`. The session is verified in `src/middleware.ts` (edge runtime) and re-verified in each Route Handler via `readPermitHolderSession()` (Node runtime) for defence-in-depth.
+
+QA seed credentials: `demo` / `demo1234` (created by migration `20260529160000_seed_permit_holder_qa_account.sql`).
 
 ## DTO Summary
 

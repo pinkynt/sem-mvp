@@ -1,13 +1,13 @@
 import { createMercadoPagoQrOrder } from "@/server/mercadopago/qr-orders";
-import { authorizeDemoMutation } from "@/server/parking/demo-guard";
+import { readPermitHolderSession } from "@/server/permisionario/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const authorizationError = authorizeDemoMutation(request);
-  if (authorizationError) {
-    return authorizationError;
+  const session = await readPermitHolderSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const url = new URL(request.url);

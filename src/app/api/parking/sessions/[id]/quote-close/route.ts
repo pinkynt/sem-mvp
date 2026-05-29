@@ -1,5 +1,5 @@
 import type { PaymentMethod } from "@/contracts/parking";
-import { authorizeDemoMutation } from "@/server/parking/demo-guard";
+import { readPermitHolderSession } from "@/server/permisionario/auth";
 import { quoteCloseSession } from "@/server/parking/domain";
 
 export const runtime = "nodejs";
@@ -9,13 +9,21 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const authorizationError = authorizeDemoMutation(request);
-  if (authorizationError) return authorizationError;
+  const session = await readPermitHolderSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     const { id } = await params;
     const body = (await request.json()) as { method: PaymentMethod };
-    return Response.json(await quoteCloseSession(id, body.method));
+    return Response.json(
+      await quoteCloseSession({
+        permitHolderId: session.permitHolderId,
+        sessionId: id,
+        method: body.method,
+      }),
+    );
   } catch (error) {
     return Response.json({ error: getErrorMessage(error) }, { status: 400 });
   }

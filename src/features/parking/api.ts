@@ -73,15 +73,23 @@ export function getParkingSession(id: string) {
 }
 
 async function parkingFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const demoApiKey = process.env.NEXT_PUBLIC_SEM_DEMO_API_KEY;
   const response = await fetch(url, {
     ...init,
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
-      ...(demoApiKey ? { "x-sem-demo-key": demoApiKey } : {}),
       ...init?.headers,
     },
   });
+
+  if (response.status === 401 && typeof window !== "undefined") {
+    const next = encodeURIComponent(
+      window.location.pathname + window.location.search,
+    );
+    window.location.assign(`/permisionario/login?next=${next}`);
+    // Throw to satisfy the type system; navigation already in flight.
+    throw new Error("Sesión expirada");
+  }
 
   const data = (await response.json()) as T | { error?: string };
   if (!response.ok) {

@@ -1,17 +1,21 @@
 import type { ParkingQuoteRequest } from "@/contracts/parking";
-import { authorizeDemoMutation } from "@/server/parking/demo-guard";
+import { readPermitHolderSession } from "@/server/permisionario/auth";
 import { quoteParkingPayment } from "@/server/parking/domain";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const authorizationError = authorizeDemoMutation(request);
-  if (authorizationError) return authorizationError;
+  const session = await readPermitHolderSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     const body = (await request.json()) as ParkingQuoteRequest;
-    return Response.json(await quoteParkingPayment(body));
+    return Response.json(
+      await quoteParkingPayment({ permitHolderId: session.permitHolderId, input: body }),
+    );
   } catch (error) {
     return Response.json({ error: getErrorMessage(error) }, { status: 400 });
   }

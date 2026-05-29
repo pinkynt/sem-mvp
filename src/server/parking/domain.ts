@@ -23,8 +23,6 @@ import type {
 } from "@/contracts/parking";
 import type { MercadoPagoQrOrderResponse } from "@/server/mercadopago/types";
 
-const DEFAULT_DEMO_PERMIT_HOLDER_FILE_NUMBER = "DEMO-001";
-
 type TariffRow = {
   id: string;
   zone_id: string;
@@ -75,7 +73,7 @@ type GatewayRefRow = {
   qr_image_data_url: string | null;
 };
 
-type DemoContext = {
+type PermitHolderContext = {
   permitHolder: {
     id: string;
     display_name: string;
@@ -97,8 +95,10 @@ export function normalizeLicensePlate(value: string) {
   return normalized;
 }
 
-export async function getPermitHolderHome(): Promise<ParkingDashboardDto> {
-  const { permitHolder, tariffs } = await getDemoContext();
+export async function getPermitHolderHome(args: {
+  permitHolderId: string;
+}): Promise<ParkingDashboardDto> {
+  const { permitHolder, tariffs } = await getPermitHolderContext(args);
   const supabase = createAdminClient();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -176,20 +176,25 @@ export async function getPermitHolderHome(): Promise<ParkingDashboardDto> {
   };
 }
 
-export async function quoteParkingPayment(input: ParkingQuoteRequest): Promise<ParkingQuoteDto> {
-  const { tariffs } = await getDemoContext();
-  const tariff = getTariff(tariffs, input.vehicleKind);
-  const durationMinutes = input.sessionId
-    ? await getSessionElapsedMinutes(input.sessionId)
-    : Math.max(1, input.durationMinutes ?? 60);
-  return buildQuote(tariff, input.method, durationMinutes);
+export async function quoteParkingPayment(args: {
+  permitHolderId: string;
+  input: ParkingQuoteRequest;
+}): Promise<ParkingQuoteDto> {
+  const { tariffs } = await getPermitHolderContext({ permitHolderId: args.permitHolderId });
+  const tariff = getTariff(tariffs, args.input.vehicleKind);
+  const durationMinutes = args.input.sessionId
+    ? await getSessionElapsedMinutes(args.input.sessionId)
+    : Math.max(1, args.input.durationMinutes ?? 60);
+  return buildQuote(tariff, args.input.method, durationMinutes);
 }
 
-export async function createPrepaidPayment(
-  input: CreateParkingPaymentRequest,
-): Promise<CreateParkingPaymentResponse> {
+export async function createPrepaidPayment(args: {
+  permitHolderId: string;
+  input: CreateParkingPaymentRequest;
+}): Promise<CreateParkingPaymentResponse> {
+  const input = args.input;
   const licensePlate = normalizeLicensePlate(input.licensePlate);
-  const { permitHolder, tariffs } = await getDemoContext();
+  const { permitHolder, tariffs } = await getPermitHolderContext({ permitHolderId: args.permitHolderId });
   const tariff = getTariff(tariffs, input.vehicleKind);
   // Pure prepago: always quote by durationMinutes (never by session elapsed time).
   const quote = buildQuote(tariff, input.method, input.durationMinutes ?? 60);
@@ -201,7 +206,7 @@ export async function createPrepaidPayment(
     const existingPayment = await getExistingClosePayment(input.sessionId);
     if (existingPayment) {
       const payment = mapPayment(existingPayment);
-      const existingQuote = await quoteFromPayment(payment);
+      const existingQuote = await quoteFromPayment(payment, tariffs);
       // Pure prepago: confirmed payment does NOT close the session.
       return {
         payment,
@@ -233,7 +238,7 @@ export async function createPrepaidPayment(
       const existingPayment = await getExistingClosePayment(input.sessionId);
       if (existingPayment) {
         const payment = mapPayment(existingPayment);
-        const existingQuote = await quoteFromPayment(payment);
+        const existingQuote = await quoteFromPayment(payment, tariffs);
         return {
           payment,
           quote: existingQuote,
@@ -255,7 +260,10 @@ export async function createPrepaidPayment(
   return { payment, quote, receipt: null, qr };
 }
 
-export async function getPaymentStatus(paymentId: string): Promise<ParkingPaymentStatusDto> {
+export async function getPaymentStatus(
+  paymentId: string,
+  permitHolderId: string,
+): Promise<ParkingPaymentStatusDto> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("payments")
@@ -263,8 +271,16 @@ export async function getPaymentStatus(paymentId: string): Promise<ParkingPaymen
     .eq("id", paymentId)
     .single();
   if (error) throw new Error(error.message);
-  const payment = mapPayment(data as PaymentRow);
-  const quote = await quoteFromPayment(payment);
+  const row = data as PaymentRow;
+
+  // Ownership check: block cross-tenant reads
+  if (row.permit_holder_id !== permitHolderId) {
+    throw new Error("Forbidden");
+  }
+
+  const payment = mapPayment(row);
+  const { tariffs } = await getPermitHolderContext({ permitHolderId });
+  const quote = await quoteFromPayment(payment, tariffs);
   const qr = await getPaymentQr(paymentId);
   return {
     payment,
@@ -273,11 +289,13 @@ export async function getPaymentStatus(paymentId: string): Promise<ParkingPaymen
   };
 }
 
-export async function openParkingSession(
-  input: OpenParkingSessionRequest,
-): Promise<OpenParkingSessionResponse> {
+export async function openParkingSession(args: {
+  permitHolderId: string;
+  input: OpenParkingSessionRequest;
+}): Promise<OpenParkingSessionResponse> {
+  const input = args.input;
   const licensePlate = normalizeLicensePlate(input.licensePlate);
-  const { permitHolder, tariffs } = await getDemoContext();
+  const { permitHolder, tariffs } = await getPermitHolderContext({ permitHolderId: args.permitHolderId });
   getTariff(tariffs, input.vehicleKind);
   const supabase = createAdminClient();
   const existingSession = await getActiveSessionForPlate(permitHolder.id, licensePlate);
@@ -305,11 +323,13 @@ export async function openParkingSession(
   return { session: mapSession(data as SessionRow, tariffs) };
 }
 
-export async function openPrepaidSession(
-  input: OpenPrepaidSessionRequest,
-): Promise<CreateParkingPaymentResponse & { session: ParkingSessionDto }> {
+export async function openPrepaidSession(args: {
+  permitHolderId: string;
+  input: OpenPrepaidSessionRequest;
+}): Promise<CreateParkingPaymentResponse & { session: ParkingSessionDto }> {
+  const input = args.input;
   const licensePlate = normalizeLicensePlate(input.licensePlate);
-  const { permitHolder, tariffs } = await getDemoContext();
+  const { permitHolder, tariffs } = await getPermitHolderContext({ permitHolderId: args.permitHolderId });
   getTariff(tariffs, input.vehicleKind);
   const supabase = createAdminClient();
 
@@ -347,29 +367,41 @@ export async function openPrepaidSession(
   }
 
   const paymentResponse = await createPrepaidPayment({
-    licensePlate: session.license_plate,
-    vehicleKind: session.vehicle_kind,
-    method: input.method,
-    durationMinutes: input.durationMinutes,
-    sessionId: session.id,
+    permitHolderId: args.permitHolderId,
+    input: {
+      licensePlate: session.license_plate,
+      vehicleKind: session.vehicle_kind,
+      method: input.method,
+      durationMinutes: input.durationMinutes,
+      sessionId: session.id,
+    },
   });
 
   return { ...paymentResponse, session: mapSession(session, tariffs) };
 }
 
-export async function quoteCloseSession(sessionId: string, method: PaymentMethod) {
-  const session = await getActiveSession(sessionId);
+export async function quoteCloseSession(args: {
+  permitHolderId: string;
+  sessionId: string;
+  method: PaymentMethod;
+}): Promise<ParkingQuoteDto> {
+  const session = await getActiveSession(args.sessionId);
   return quoteParkingPayment({
-    vehicleKind: session.vehicle_kind,
-    method,
-    sessionId,
+    permitHolderId: args.permitHolderId,
+    input: {
+      vehicleKind: session.vehicle_kind,
+      method: args.method,
+      sessionId: args.sessionId,
+    },
   });
 }
 
-export async function closeParkingSession(
-  sessionId: string,
-  method: PaymentMethod,
-): Promise<CloseParkingSessionResponse> {
+export async function closeParkingSession(args: {
+  permitHolderId: string;
+  sessionId: string;
+  method: PaymentMethod;
+}): Promise<CloseParkingSessionResponse> {
+  const { sessionId, method, permitHolderId } = args;
   const session = await getSessionById(sessionId);
 
   // Prepago sessions are already settled at creation — do not re-quote by elapsed time.
@@ -377,22 +409,23 @@ export async function closeParkingSession(
     throw new Error("Cannot close a prepago session via closeParkingSession; prepago sessions close lazily when valid_until passes");
   }
 
+  const { tariffs } = await getPermitHolderContext({ permitHolderId });
+
   if (session.status !== "active") {
     const existingPayment = await getExistingClosePayment(sessionId);
     if (!existingPayment) throw new Error("Parking session is already closed");
     const payment = mapPayment(existingPayment);
-    const quote = await quoteFromPayment(payment);
+    const quote = await quoteFromPayment(payment, tariffs);
     return {
       payment,
       quote,
       receipt: payment.status === "confirmed" ? buildReceipt(payment, quote) : null,
       qr: await getPaymentQr(payment.id),
-      session: mapSession(session, (await getDemoContext()).tariffs),
+      session: mapSession(session, tariffs),
     };
   }
 
   // Pospago close: compute elapsed quote and insert payment.
-  const { tariffs } = await getDemoContext();
   const tariff = getTariff(tariffs, session.vehicle_kind);
   const elapsedMinutes = await getSessionElapsedMinutes(sessionId);
   const quote = buildQuote(tariff, method, elapsedMinutes);
@@ -420,7 +453,7 @@ export async function closeParkingSession(
       const existingPayment = await getExistingClosePayment(sessionId);
       if (existingPayment) {
         const payment = mapPayment(existingPayment);
-        const existingQuote = await quoteFromPayment(payment);
+        const existingQuote = await quoteFromPayment(payment, tariffs);
         if (payment.status === "confirmed") await closeSession(sessionId);
         return {
           payment,
@@ -456,17 +489,20 @@ export async function closeParkingSession(
   };
 }
 
-export async function getParkingSession(id: string): Promise<ParkingSessionDetailDto> {
+export async function getParkingSession(args: {
+  permitHolderId: string;
+  id: string;
+}): Promise<ParkingSessionDetailDto> {
   const supabase = createAdminClient();
   const { data: sessionData, error: sessionError } = await supabase
     .from("parking_sessions")
     .select("*")
-    .eq("id", id)
+    .eq("id", args.id)
     .single();
   if (sessionError) throw new Error(sessionError.message);
 
   let session = sessionData as SessionRow;
-  const { tariffs } = await getDemoContext();
+  const { tariffs } = await getPermitHolderContext({ permitHolderId: args.permitHolderId });
 
   // For prepago sessions, run lazy-close guard before returning.
   if (session.kind === "prepago" && session.status === "active") {
@@ -477,7 +513,7 @@ export async function getParkingSession(id: string): Promise<ParkingSessionDetai
       const { data: refreshed, error: refreshError } = await supabase
         .from("parking_sessions")
         .select("*")
-        .eq("id", id)
+        .eq("id", args.id)
         .single();
       if (refreshError) throw new Error(refreshError.message);
       session = refreshed as SessionRow;
@@ -643,17 +679,18 @@ async function createPaymentQr(payment: PaymentDto, quote: ParkingQuoteDto): Pro
   return { qrData: qr.qrData, qrImageDataUrl: qr.qrImageDataUrl, providerOrderId: qr.orderId };
 }
 
-async function getDemoContext(): Promise<DemoContext> {
-  const fileNumber = process.env.SEM_DEMO_PERMIT_HOLDER_LEGAJO ?? DEFAULT_DEMO_PERMIT_HOLDER_FILE_NUMBER;
+async function getPermitHolderContext(args: {
+  permitHolderId: string;
+}): Promise<PermitHolderContext> {
   const supabase = createAdminClient();
   const { data: permitHolder, error: holderError } = await supabase
     .from("permit_holders")
     .select("id, display_name, file_number, zone_id, zones(id, name)")
-    .eq("file_number", fileNumber)
+    .eq("id", args.permitHolderId)
     .single();
   if (holderError) throw new Error(holderError.message);
 
-  const holder = permitHolder as unknown as DemoContext["permitHolder"];
+  const holder = permitHolder as unknown as PermitHolderContext["permitHolder"];
   const { data: tariffs, error: tariffsError } = await supabase
     .from("tariffs")
     .select("*")
@@ -767,8 +804,7 @@ async function closeSession(sessionId: string) {
   if (error) throw new Error(error.message);
 }
 
-async function quoteFromPayment(payment: PaymentDto) {
-  const { tariffs } = await getDemoContext();
+async function quoteFromPayment(payment: PaymentDto, tariffs: TariffRow[]) {
   const tariff = getTariff(tariffs, payment.vehicleKind);
   const billedMinutes = Math.max(60, Math.ceil(payment.durationMinutes / 60) * 60);
   return {
