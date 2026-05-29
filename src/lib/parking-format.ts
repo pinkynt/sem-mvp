@@ -6,7 +6,7 @@ export function money(cents: number): string {
 }
 
 export function timeLabel(value: string): string {
-  return new Date(value).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  return new Date(value).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 export function elapsedLabel(min: number): string {

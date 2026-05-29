@@ -149,20 +149,17 @@ function ActiveSessionCard({ session }: { session: ParkingSessionDto }) {
       }
       className="flex w-44 shrink-0 snap-start flex-col gap-3 rounded-card border border-border bg-surface p-4 text-left outline-none transition-[background-color,border-color] duration-150 ease-out hover:border-brand-soft focus-visible:ring-4 focus-visible:ring-brand/30"
     >
-      <span className="flex items-center justify-between">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-surface-muted text-brand" aria-hidden>
-          {session.vehicleKind === "auto" ? <Car className="size-5" /> : <Bike className="size-5" />}
-        </span>
-        <span className={cn("inline-flex items-center gap-1 text-sm font-semibold", isPrepago ? "text-confirm-ink" : "text-ink-soft")}>
-          <Clock className="size-4" aria-hidden />
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-muted text-brand" aria-hidden>
+        {session.vehicleKind === "auto" ? <Car className="size-5" /> : <Bike className="size-5" />}
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-lg font-bold tracking-wide text-ink">{displayPlate(session.licensePlate)}</span>
+        <span className={cn("inline-flex items-center gap-1 whitespace-nowrap text-sm font-semibold tabular-nums", isPrepago ? "text-confirm-ink" : "text-ink-soft")}>
+          <Clock className="size-4 shrink-0" aria-hidden />
           {isPrepago && session.validUntil
             ? `hasta ${timeLabel(session.validUntil)}`
             : elapsedLabel(session.elapsedMinutes)}
         </span>
-      </span>
-      <span className="flex flex-col">
-        <span className="text-lg font-bold tracking-wide text-ink">{displayPlate(session.licensePlate)}</span>
-        <span className="text-sm text-ink-soft">{session.vehicleLabel}</span>
       </span>
       {!isPrepago && (
         <span className="mt-auto inline-flex items-center gap-1 text-sm font-bold text-brand">
