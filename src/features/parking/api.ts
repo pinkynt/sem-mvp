@@ -5,10 +5,13 @@ import type {
   CreateParkingPaymentResponse,
   OpenParkingSessionRequest,
   OpenParkingSessionResponse,
+  OpenPrepaidSessionRequest,
   ParkingDashboardDto,
   ParkingPaymentStatusDto,
   ParkingQuoteDto,
   ParkingQuoteRequest,
+  ParkingSessionDetailDto,
+  ParkingSessionDto,
   PaymentMethod,
 } from "@/contracts/parking";
 
@@ -53,6 +56,20 @@ export function closeParkingSession(sessionId: string, body: CloseParkingSession
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export function openPrepaidSession(body: OpenPrepaidSessionRequest) {
+  return parkingFetch<CreateParkingPaymentResponse & { session: ParkingSessionDto }>(
+    "/api/parking/sessions/prepaid",
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function getParkingSession(id: string) {
+  return parkingFetch<ParkingSessionDetailDto>(`/api/parking/sessions/${id}`);
 }
 
 async function parkingFetch<T>(url: string, init?: RequestInit): Promise<T> {

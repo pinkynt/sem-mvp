@@ -25,6 +25,10 @@ export type ParkingSessionDto = {
   startedAt: string;
   elapsedMinutes: number;
   status: SessionStatus;
+  kind: "prepago" | "pospago";
+  validUntil: string | null;
+  paymentId: string | null;
+  paymentStatus: PaymentStatus | null;
 };
 
 export type PaymentDto = {
@@ -112,6 +116,7 @@ export type ParkingPaymentStatusDto = {
 export type OpenParkingSessionRequest = {
   licensePlate: string;
   vehicleKind: VehicleKind;
+  kind?: "prepago" | "pospago";
 };
 
 export type OpenParkingSessionResponse = {
@@ -124,4 +129,17 @@ export type CloseParkingSessionRequest = {
 
 export type CloseParkingSessionResponse = CreateParkingPaymentResponse & {
   session: ParkingSessionDto;
+};
+
+export type OpenPrepaidSessionRequest = {
+  licensePlate: string;
+  vehicleKind: VehicleKind;
+  durationMinutes: number;
+  method: PaymentMethod;
+};
+
+export type ParkingSessionDetailDto = {
+  session: ParkingSessionDto;
+  payment: PaymentDto | null;
+  qr: ParkingQrDto | null;
 };

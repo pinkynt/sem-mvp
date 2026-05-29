@@ -6,12 +6,14 @@ import type {
   CreateParkingPaymentResponse,
   OpenParkingSessionRequest,
   OpenParkingSessionResponse,
+  OpenPrepaidSessionRequest,
   ParkingDashboardDto,
   ParkingPaymentStatusDto,
   ParkingQrDto,
   ParkingQuoteDto,
   ParkingQuoteRequest,
   ParkingReceiptDto,
+  ParkingSessionDetailDto,
   ParkingSessionDto,
   PaymentDto,
   PaymentMethod,
@@ -41,6 +43,7 @@ type SessionRow = {
   status: "active" | "closed";
   started_at: string;
   closed_at: string | null;
+  kind: "prepago" | "pospago";
 };
 
 type PaymentRow = {
@@ -116,6 +119,31 @@ export async function getPermitHolderHome(): Promise<ParkingDashboardDto> {
   if (sessionsError) throw new Error(sessionsError.message);
   if (paymentsError) throw new Error(paymentsError.message);
 
+  let activeSessionRows = (activeSessions ?? []) as SessionRow[];
+
+  // Lazily close expired prepago sessions before returning the dashboard.
+  activeSessionRows = await closeExpiredPrepaidSessions(activeSessionRows);
+
+  // Batch-fetch linked payments for all remaining active sessions so we can
+  // populate the auxiliary DTO fields (validUntil, paymentId, paymentStatus).
+  const activeIds = activeSessionRows.map((s) => s.id);
+  let linkedPaymentsBySessionId: Map<string, PaymentRow> = new Map();
+  if (activeIds.length > 0) {
+    const { data: linkedPayments, error: linkedError } = await supabase
+      .from("payments")
+      .select("*")
+      .in("parking_session_id", activeIds)
+      .in("status", ["pending", "confirmed"])
+      .order("created_at", { ascending: false });
+    if (linkedError) throw new Error(linkedError.message);
+    // Keep only the most-recent payment per session (already ordered desc).
+    for (const p of (linkedPayments ?? []) as PaymentRow[]) {
+      if (p.parking_session_id && !linkedPaymentsBySessionId.has(p.parking_session_id)) {
+        linkedPaymentsBySessionId.set(p.parking_session_id, p);
+      }
+    }
+  }
+
   const paymentRows = (recentPayments ?? []) as PaymentRow[];
   const confirmedPayments = paymentRows.filter((payment) => payment.status === "confirmed");
   const todayPayments = confirmedPayments.filter(
@@ -138,8 +166,8 @@ export async function getPermitHolderHome(): Promise<ParkingDashboardDto> {
       todayCount: todayPayments.length,
       accumulatedAmountCents: confirmedPayments.reduce((sum, payment) => sum + payment.amount_cents, 0),
     },
-    activeSessions: ((activeSessions ?? []) as SessionRow[]).map((session) =>
-      mapSession(session, tariffs),
+    activeSessions: activeSessionRows.map((session) =>
+      mapSession(session, tariffs, linkedPaymentsBySessionId.get(session.id)),
     ),
     recentPayments: paymentRows.map((payment) => mapPayment(payment)),
   };
@@ -160,9 +188,8 @@ export async function createPrepaidPayment(
   const licensePlate = normalizeLicensePlate(input.licensePlate);
   const { permitHolder, tariffs } = await getDemoContext();
   const tariff = getTariff(tariffs, input.vehicleKind);
-  const quote = input.sessionId
-    ? buildQuote(tariff, input.method, await getSessionElapsedMinutes(input.sessionId))
-    : buildQuote(tariff, input.method, input.durationMinutes ?? 60);
+  // Pure prepago: always quote by durationMinutes (never by session elapsed time).
+  const quote = buildQuote(tariff, input.method, input.durationMinutes ?? 60);
   const status = input.method === "cash" ? "confirmed" : "pending";
   const now = new Date().toISOString();
   const supabase = createAdminClient();
@@ -172,7 +199,7 @@ export async function createPrepaidPayment(
     if (existingPayment) {
       const payment = mapPayment(existingPayment);
       const existingQuote = await quoteFromPayment(payment);
-      if (payment.status === "confirmed") await closeSession(input.sessionId);
+      // Pure prepago: confirmed payment does NOT close the session.
       return {
         payment,
         quote: existingQuote,
@@ -182,28 +209,24 @@ export async function createPrepaidPayment(
     }
   }
 
-  const { data, error } = await supabase
-    .from("payments")
-    .insert({
-      zone_id: permitHolder.zone_id,
-      permit_holder_id: permitHolder.id,
-      parking_session_id: input.sessionId ?? null,
-      license_plate: licensePlate,
-      vehicle_kind: input.vehicleKind,
-      method: input.method,
-      status,
-      amount_cents: quote.finalAmountCents,
-      base_amount_cents: quote.baseAmountCents,
-      discount_cents: quote.discountCents,
-      duration_minutes: quote.durationMinutes,
-      valid_until: quote.validUntil,
-      confirmed_at: status === "confirmed" ? now : null,
-    })
-    .select("*")
-    .single();
+  const insertResult = await insertPayment({
+    zone_id: permitHolder.zone_id,
+    permit_holder_id: permitHolder.id,
+    parking_session_id: input.sessionId ?? null,
+    license_plate: licensePlate,
+    vehicle_kind: input.vehicleKind,
+    method: input.method,
+    status,
+    amount_cents: quote.finalAmountCents,
+    base_amount_cents: quote.baseAmountCents,
+    discount_cents: quote.discountCents,
+    duration_minutes: quote.durationMinutes,
+    valid_until: quote.validUntil,
+    confirmed_at: status === "confirmed" ? now : null,
+  });
 
-  if (error) {
-    if (input.sessionId && error.code === "23505") {
+  if ("error" in insertResult) {
+    if (input.sessionId && insertResult.code === "23505") {
       const existingPayment = await getExistingClosePayment(input.sessionId);
       if (existingPayment) {
         const payment = mapPayment(existingPayment);
@@ -216,12 +239,12 @@ export async function createPrepaidPayment(
         };
       }
     }
-    throw new Error(error.message);
+    throw new Error(insertResult.message);
   }
 
-  const payment = mapPayment(data as PaymentRow);
+  const payment = mapPayment(insertResult);
   if (input.method === "cash") {
-    if (input.sessionId) await closeSession(input.sessionId);
+    // Prepago cash: DO NOT close session — session stays active until valid_until.
     return { payment, quote, receipt: buildReceipt(payment, quote), qr: null };
   }
 
@@ -265,6 +288,7 @@ export async function openParkingSession(
       license_plate: licensePlate,
       vehicle_kind: input.vehicleKind,
       status: "active",
+      kind: input.kind ?? "pospago",
     })
     .select("*")
     .single();
@@ -276,6 +300,58 @@ export async function openParkingSession(
     throw new Error(error.message);
   }
   return { session: mapSession(data as SessionRow, tariffs) };
+}
+
+export async function openPrepaidSession(
+  input: OpenPrepaidSessionRequest,
+): Promise<CreateParkingPaymentResponse & { session: ParkingSessionDto }> {
+  const licensePlate = normalizeLicensePlate(input.licensePlate);
+  const { permitHolder, tariffs } = await getDemoContext();
+  getTariff(tariffs, input.vehicleKind);
+  const supabase = createAdminClient();
+
+  const existingSession = await getActiveSessionForPlate(permitHolder.id, licensePlate);
+  let session: SessionRow;
+  if (existingSession) {
+    session = existingSession;
+  } else {
+    const { data, error } = await supabase
+      .from("parking_sessions")
+      .insert({
+        zone_id: permitHolder.zone_id,
+        permit_holder_id: permitHolder.id,
+        license_plate: licensePlate,
+        vehicle_kind: input.vehicleKind,
+        status: "active",
+        kind: "prepago",
+      })
+      .select("*")
+      .single();
+    if (error) {
+      if (error.code === "23505") {
+        const racedSession = await getActiveSessionForPlate(permitHolder.id, licensePlate);
+        if (racedSession) {
+          session = racedSession;
+        } else {
+          throw new Error(error.message);
+        }
+      } else {
+        throw new Error(error.message);
+      }
+    } else {
+      session = data as SessionRow;
+    }
+  }
+
+  const paymentResponse = await createPrepaidPayment({
+    licensePlate: session.license_plate,
+    vehicleKind: session.vehicle_kind,
+    method: input.method,
+    durationMinutes: input.durationMinutes,
+    sessionId: session.id,
+  });
+
+  return { ...paymentResponse, session: mapSession(session, tariffs) };
 }
 
 export async function quoteCloseSession(sessionId: string, method: PaymentMethod) {
@@ -292,6 +368,12 @@ export async function closeParkingSession(
   method: PaymentMethod,
 ): Promise<CloseParkingSessionResponse> {
   const session = await getSessionById(sessionId);
+
+  // Prepago sessions are already settled at creation — do not re-quote by elapsed time.
+  if (session.kind === "prepago") {
+    throw new Error("Cannot close a prepago session via closeParkingSession; prepago sessions close lazily when valid_until passes");
+  }
+
   if (session.status !== "active") {
     const existingPayment = await getExistingClosePayment(sessionId);
     if (!existingPayment) throw new Error("Parking session is already closed");
@@ -306,16 +388,142 @@ export async function closeParkingSession(
     };
   }
 
-  const paymentResponse = await createPrepaidPayment({
-    licensePlate: session.license_plate,
-    vehicleKind: session.vehicle_kind,
+  // Pospago close: compute elapsed quote and insert payment.
+  const { tariffs } = await getDemoContext();
+  const tariff = getTariff(tariffs, session.vehicle_kind);
+  const elapsedMinutes = await getSessionElapsedMinutes(sessionId);
+  const quote = buildQuote(tariff, method, elapsedMinutes);
+  const status = method === "cash" ? "confirmed" : "pending";
+  const now = new Date().toISOString();
+
+  const insertResult = await insertPayment({
+    zone_id: session.zone_id,
+    permit_holder_id: session.permit_holder_id,
+    parking_session_id: sessionId,
+    license_plate: session.license_plate,
+    vehicle_kind: session.vehicle_kind,
     method,
-    sessionId,
+    status,
+    amount_cents: quote.finalAmountCents,
+    base_amount_cents: quote.baseAmountCents,
+    discount_cents: quote.discountCents,
+    duration_minutes: quote.durationMinutes,
+    valid_until: quote.validUntil,
+    confirmed_at: status === "confirmed" ? now : null,
   });
-  const mappedSession = paymentResponse.payment.status === "confirmed"
-    ? { ...mapSession({ ...session, status: "closed", closed_at: new Date().toISOString() }, (await getDemoContext()).tariffs), status: "closed" as const }
-    : mapSession(session, (await getDemoContext()).tariffs);
-  return { ...paymentResponse, session: mappedSession };
+
+  if ("error" in insertResult) {
+    if (insertResult.code === "23505") {
+      const existingPayment = await getExistingClosePayment(sessionId);
+      if (existingPayment) {
+        const payment = mapPayment(existingPayment);
+        const existingQuote = await quoteFromPayment(payment);
+        if (payment.status === "confirmed") await closeSession(sessionId);
+        return {
+          payment,
+          quote: existingQuote,
+          receipt: payment.status === "confirmed" ? buildReceipt(payment, existingQuote) : null,
+          qr: await getPaymentQr(payment.id),
+          session: mapSession({ ...session, status: "closed", closed_at: now }, tariffs),
+        };
+      }
+    }
+    throw new Error(insertResult.message);
+  }
+
+  const payment = mapPayment(insertResult);
+  if (method === "cash") {
+    await closeSession(sessionId);
+    return {
+      payment,
+      quote,
+      receipt: buildReceipt(payment, quote),
+      qr: null,
+      session: mapSession({ ...session, status: "closed", closed_at: now }, tariffs),
+    };
+  }
+
+  const qr = await createPaymentQr(payment, quote);
+  return {
+    payment,
+    quote,
+    receipt: null,
+    qr,
+    session: mapSession(session, tariffs),
+  };
+}
+
+export async function getParkingSession(id: string): Promise<ParkingSessionDetailDto> {
+  const supabase = createAdminClient();
+  const { data: sessionData, error: sessionError } = await supabase
+    .from("parking_sessions")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (sessionError) throw new Error(sessionError.message);
+
+  let session = sessionData as SessionRow;
+  const { tariffs } = await getDemoContext();
+
+  // For prepago sessions, run lazy-close guard before returning.
+  if (session.kind === "prepago" && session.status === "active") {
+    const linkedPayment = await getExistingClosePayment(session.id);
+    if (linkedPayment?.valid_until && new Date(linkedPayment.valid_until) < new Date()) {
+      await closeSession(session.id);
+      // Re-fetch after close.
+      const { data: refreshed, error: refreshError } = await supabase
+        .from("parking_sessions")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (refreshError) throw new Error(refreshError.message);
+      session = refreshed as SessionRow;
+    }
+  }
+
+  // Fetch latest linked payment and QR.
+  const linkedPayment = await getExistingClosePayment(session.id);
+  const qr = linkedPayment ? await getPaymentQr(linkedPayment.id) : null;
+
+  return {
+    session: mapSession(session, tariffs, linkedPayment ?? undefined),
+    payment: linkedPayment ? mapPayment(linkedPayment) : null,
+    qr,
+  };
+}
+
+export async function closeExpiredPrepaidSessions(activeSessions: SessionRow[]): Promise<SessionRow[]> {
+  const prepaidSessions = activeSessions.filter((s) => s.kind === "prepago");
+  if (prepaidSessions.length === 0) return activeSessions;
+
+  const supabase = createAdminClient();
+  const prepaidIds = prepaidSessions.map((s) => s.id);
+
+  const { data: linkedPayments, error } = await supabase
+    .from("payments")
+    .select("*")
+    .in("parking_session_id", prepaidIds)
+    .in("status", ["pending", "confirmed"]);
+  if (error) throw new Error(error.message);
+
+  const paymentBySessionId = new Map<string, PaymentRow>();
+  for (const p of (linkedPayments ?? []) as PaymentRow[]) {
+    if (p.parking_session_id && !paymentBySessionId.has(p.parking_session_id)) {
+      paymentBySessionId.set(p.parking_session_id, p);
+    }
+  }
+
+  const now = new Date();
+  const expiredIds = new Set<string>();
+  for (const session of prepaidSessions) {
+    const payment = paymentBySessionId.get(session.id);
+    if (payment?.valid_until && new Date(payment.valid_until) < now) {
+      await closeSession(session.id);
+      expiredIds.add(session.id);
+    }
+  }
+
+  return activeSessions.filter((s) => !expiredIds.has(s.id));
 }
 
 export async function applyMercadoPagoOrderToPayment(order: MercadoPagoQrOrderResponse) {
@@ -358,8 +566,56 @@ async function updatePaymentFromGatewayRef(externalReference: string, nextStatus
   if (error) throw new Error(error.message);
 
   const row = payment as PaymentRow;
-  if (row.status === "confirmed" && row.parking_session_id) await closeSession(row.parking_session_id);
+  if (row.status === "confirmed" && row.parking_session_id) {
+    // Exact rule from D5: close only if the linked session is pospago.
+    const { data: sess, error: sessError } = await supabase
+      .from("parking_sessions")
+      .select("kind")
+      .eq("id", row.parking_session_id)
+      .maybeSingle();
+    if (sessError) throw new Error(sessError.message);
+    if (sess?.kind === "pospago") {
+      await closeSession(row.parking_session_id);
+    }
+    // kind === 'prepago' → do NOT close; session stays active until valid_until (D3 lazy-close)
+  }
   return mapPayment(row);
+}
+
+// ---------------------------------------------------------------------------
+// insertPayment — shared helper used by createPrepaidPayment and
+// closeParkingSession. Returns the inserted PaymentRow on success, or an
+// object with { error: true, code, message } on failure.
+// ---------------------------------------------------------------------------
+type InsertPaymentInput = {
+  zone_id: string;
+  permit_holder_id: string;
+  parking_session_id: string | null;
+  license_plate: string;
+  vehicle_kind: VehicleKind;
+  method: PaymentMethod;
+  status: PaymentStatus;
+  amount_cents: number;
+  base_amount_cents: number;
+  discount_cents: number;
+  duration_minutes: number;
+  valid_until: string | null;
+  confirmed_at: string | null;
+};
+
+type InsertPaymentError = { error: true; code: string; message: string };
+
+async function insertPayment(input: InsertPaymentInput): Promise<PaymentRow | InsertPaymentError> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .insert(input)
+    .select("*")
+    .single();
+  if (error) {
+    return { error: true, code: error.code, message: error.message };
+  }
+  return data as PaymentRow;
 }
 
 async function createPaymentQr(payment: PaymentDto, quote: ParkingQuoteDto): Promise<ParkingQrDto> {
@@ -588,7 +844,7 @@ function mapTariff(row: TariffRow): VehicleTariffDto {
   };
 }
 
-function mapSession(row: SessionRow, tariffs: TariffRow[]): ParkingSessionDto {
+function mapSession(row: SessionRow, tariffs: TariffRow[], linkedPayment?: PaymentRow): ParkingSessionDto {
   const tariff = getTariff(tariffs, row.vehicle_kind);
   const end = row.closed_at ? new Date(row.closed_at).getTime() : Date.now();
   return {
@@ -599,6 +855,10 @@ function mapSession(row: SessionRow, tariffs: TariffRow[]): ParkingSessionDto {
     startedAt: row.started_at,
     elapsedMinutes: Math.max(1, Math.ceil((end - new Date(row.started_at).getTime()) / 60000)),
     status: row.status,
+    kind: row.kind,
+    validUntil: linkedPayment?.valid_until ?? null,
+    paymentId: linkedPayment?.id ?? null,
+    paymentStatus: linkedPayment?.status ?? null,
   };
 }
 
