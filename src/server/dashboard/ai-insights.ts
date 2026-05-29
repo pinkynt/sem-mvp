@@ -5,10 +5,12 @@ const INSUFFICIENT_INSIGHT = "Aún no hay datos suficientes para generar una lec
 const TITLE: DashboardAiInsightsDto["title"] = "Lectura inteligente del día";
 const DEFAULT_KIMI_BASE_URL = "https://api.moonshot.ai/v1";
 const DEFAULT_KIMI_MODEL = "kimi-k2.6";
-const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1";
+const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding";
 const KIMI_CODE_MODEL = "kimi-for-coding";
 const MAX_INSIGHTS = 3;
 const MAX_CHAT_CHARS = 900;
+
+type KimiConfig = { apiKey: string; baseUrl: string; model: string; protocol: "openai" | "anthropic" };
 
 type InsightPaymentRow = {
   amount_cents: number;
@@ -132,6 +134,15 @@ async function getKimiInsights(metrics: InsightMetrics): Promise<DashboardAiInsi
   const config = getKimiConfig();
   if (!config) return null;
 
+  const system = "Sos un asistente institucional para un dashboard municipal de estacionamiento medido. Respondé solo con el objeto solicitado. No inventes datos. No menciones JSON, base de datos, endpoints ni cálculos internos. Usá español claro, tono institucional y hasta tres frases breves.";
+  const user = `Generá una lectura operativa breve con estos datos agregados del día. Priorizá comparaciones simples: hoy contra ayer, digital contra efectivo, franja horaria, zona o permisionario con más actividad. Si los datos no alcanzan, devolvé una única frase de datos insuficientes. Datos: ${JSON.stringify(metrics)}`;
+
+  if (config.protocol === "anthropic") {
+    const content = await getKimiAnthropicText(config, system, `${user}\n\nDevolvé únicamente un objeto JSON válido con esta forma exacta: {"title":"${TITLE}","insights":["frase breve"]}.`, 260);
+    if (!content) return null;
+    return normalizeInsights(parseJsonObject(content));
+  }
+
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -161,11 +172,11 @@ async function getKimiInsights(metrics: InsightMetrics): Promise<DashboardAiInsi
       messages: [
         {
           role: "system",
-          content: "Sos un asistente institucional para un dashboard municipal de estacionamiento medido. Respondé solo con el objeto solicitado. No inventes datos. No menciones JSON, base de datos, endpoints ni cálculos internos. Usá español claro, tono institucional y hasta tres frases breves.",
+          content: system,
         },
         {
           role: "user",
-          content: `Generá una lectura operativa breve con estos datos agregados del día. Priorizá comparaciones simples: hoy contra ayer, digital contra efectivo, franja horaria, zona o permisionario con más actividad. Si los datos no alcanzan, devolvé una única frase de datos insuficientes. Datos: ${JSON.stringify(metrics)}`,
+          content: user,
         },
       ],
     }),
@@ -183,6 +194,16 @@ async function getKimiInsights(metrics: InsightMetrics): Promise<DashboardAiInsi
 async function getKimiChatReply(question: string, metrics: InsightMetrics): Promise<string | null> {
   const config = getKimiConfig();
   if (!config) return null;
+
+  const system = "Sos el asistente operativo de SEM Digital para usuarios municipales. Respondé en español claro, institucional y breve. Usá únicamente los datos agregados provistos. No inventes datos, no hagas predicciones avanzadas, no menciones JSON, base de datos, endpoints, API ni cálculos internos. Si la pregunta no trata sobre métricas operativas del estacionamiento medido, explicá que solo podés ayudar con recaudación, pagos, zonas, permisionarios, horarios y sesiones.";
+  const user = `Pregunta municipal: ${question}\n\nDatos agregados disponibles: ${JSON.stringify(metrics)}\n\nRespondé con un informe o respuesta breve. Si corresponde, usá hasta 4 puntos simples.`;
+
+  if (config.protocol === "anthropic") {
+    const content = await getKimiAnthropicText(config, system, `${user}\n\nDevolvé únicamente un objeto JSON válido con esta forma exacta: {"reply":"respuesta breve"}.`, 420);
+    if (!content) return null;
+    const parsed = parseJsonObject(content) as { reply?: unknown } | null;
+    return normalizeChatReply(parsed?.reply);
+  }
 
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
@@ -212,11 +233,11 @@ async function getKimiChatReply(question: string, metrics: InsightMetrics): Prom
       messages: [
         {
           role: "system",
-          content: "Sos el asistente operativo de SEM Digital para usuarios municipales. Respondé en español claro, institucional y breve. Usá únicamente los datos agregados provistos. No inventes datos, no hagas predicciones avanzadas, no menciones JSON, base de datos, endpoints, API ni cálculos internos. Si la pregunta no trata sobre métricas operativas del estacionamiento medido, explicá que solo podés ayudar con recaudación, pagos, zonas, permisionarios, horarios y sesiones.",
+          content: system,
         },
         {
           role: "user",
-          content: `Pregunta municipal: ${question}\n\nDatos agregados disponibles: ${JSON.stringify(metrics)}\n\nRespondé con un informe o respuesta breve. Si corresponde, usá hasta 4 puntos simples.`,
+          content: user,
         },
       ],
     }),
@@ -232,7 +253,30 @@ async function getKimiChatReply(question: string, metrics: InsightMetrics): Prom
   return normalizeChatReply(parsed.reply);
 }
 
-function getKimiConfig() {
+async function getKimiAnthropicText(config: KimiConfig, system: string, user: string, maxTokens: number) {
+  const response = await fetch(`${trimTrailingSlash(config.baseUrl)}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "x-api-key": config.apiKey,
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: config.model,
+      max_tokens: maxTokens,
+      temperature: 0.2,
+      system,
+      messages: [{ role: "user", content: user }],
+    }),
+  });
+
+  if (!response.ok) return null;
+
+  const completion = (await response.json()) as { content?: Array<{ type?: string; text?: string }> };
+  return completion.content?.find((block) => block.type === "text")?.text ?? null;
+}
+
+function getKimiConfig(): KimiConfig | null {
   const apiKey = process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY;
   if (!apiKey) return null;
 
@@ -241,6 +285,7 @@ function getKimiConfig() {
     apiKey,
     baseUrl: process.env.KIMI_API_BASE_URL ?? (isKimiCodeKey ? KIMI_CODE_BASE_URL : DEFAULT_KIMI_BASE_URL),
     model: process.env.KIMI_MODEL ?? (isKimiCodeKey ? KIMI_CODE_MODEL : DEFAULT_KIMI_MODEL),
+    protocol: isKimiCodeKey ? "anthropic" : "openai",
   };
 }
 
@@ -330,6 +375,14 @@ function normalizeChatReply(value: unknown): string | null {
   return reply;
 }
 
+function parseJsonObject(content: string): unknown {
+  const trimmed = content.trim();
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start === -1 || end === -1 || end < start) return null;
+  return JSON.parse(trimmed.slice(start, end + 1));
+}
+
 function hasEnoughData(metrics: InsightMetrics) {
   return metrics.today.confirmedPayments > 0 || metrics.sessionsToday.active > 0 || metrics.sessionsToday.closed > 0;
 }
@@ -409,6 +462,10 @@ function formatDuration(minutes: number) {
 
 function containsTechnicalLanguage(value: string) {
   return /json|base de datos|endpoint|api|sql|query|cálculo interno|calculo interno/i.test(value);
+}
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
 }
 
 function startOfDay(date: Date) {
