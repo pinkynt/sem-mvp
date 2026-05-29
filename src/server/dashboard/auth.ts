@@ -65,6 +65,10 @@ export function dashboardApiError(error: unknown, fallbackMessage = "No pudimos 
   if (error instanceof DashboardAuthError) return Response.json({ error: error.message }, { status: 401 });
   if (error instanceof DashboardForbiddenError) return Response.json({ error: error.message }, { status: 403 });
   if (error instanceof DashboardValidationError) return Response.json({ error: error.message, field: error.field, code: error.code }, { status: error.status });
-  if (error instanceof ZodError) return Response.json({ error: fallbackMessage }, { status: 422 });
+  if (error instanceof ZodError) {
+    const issue = error.issues[0];
+    const field = typeof issue?.path[0] === "string" ? issue.path[0] : undefined;
+    return Response.json({ error: issue?.message ?? fallbackMessage, field, code: "invalid_input" }, { status: 422 });
+  }
   return Response.json({ error: fallbackMessage }, { status: 400 });
 }
