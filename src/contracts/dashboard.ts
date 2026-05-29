@@ -1,0 +1,16 @@
+export type DashboardRole = "admin" | "operator";
+export type PaymentStatus = "pending" | "confirmed" | "expired" | "cancelled" | "failed" | "refunded";
+export type PaymentMethod = "cash" | "digital";
+export type VehicleKind = "auto" | "moto";
+
+export type DashboardUser = { id: string; email: string; displayName: string; role: DashboardRole };
+export type DashboardKpisDto = { todayRevenueCents: number; todayPayments: number; activeSessions: number; permitHolders: number; pendingPayments: number; digitalSharePercent: number };
+export type RevenuePointDto = { date: string; cashCents: number; digitalCents: number; confirmedCount: number };
+export type LatestMovementDto = { id: string; type: "payment" | "session"; title: string; detail: string; amountCents: number | null; status: PaymentStatus | "active" | "closed"; createdAt: string };
+export type OperationFilters = { from?: string; to?: string; status?: PaymentStatus | "all"; method?: PaymentMethod | "all"; plate?: string; zoneId?: string; permitHolderId?: string; page?: number; pageSize?: number };
+export type OperationRowDto = { id: string; licensePlate: string; zoneId: string; zoneName: string; permitHolderName: string; permitHolderFileNumber: string; method: PaymentMethod; status: PaymentStatus; amountCents: number; durationMinutes: number; createdAt: string; confirmedAt: string | null };
+export type OperationListDto = { rows: OperationRowDto[]; total: number; page: number; pageSize: number };
+export type OperationDetailDto = OperationRowDto & { vehicleKind: VehicleKind; baseAmountCents: number; discountCents: number; validUntil: string | null; session: { id: string; status: "active" | "closed"; startedAt: string; closedAt: string | null } | null; gateway: { provider: string; providerOrderId: string | null; providerPaymentId: string | null; externalReference: string } | null };
+export type PermitHolderAdminDto = { id: string; displayName: string; fileNumber: string; zoneId: string; zoneName: string; active: boolean; account: { id: string; username: string; active: boolean; passwordUpdatedAt: string } | null; createdAt: string };
+export type TariffDto = { id: string; zoneId: string; zoneName: string; vehicleKind: VehicleKind; label: string; hourlyRateCents: number; digitalDiscountPercent: number; active: boolean; createdAt: string };
+export type ZoneDto = { id: string; name: string; active: boolean };
