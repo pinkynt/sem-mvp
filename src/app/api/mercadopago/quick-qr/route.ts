@@ -1,9 +1,15 @@
 import { createMercadoPagoQrOrder } from "@/server/mercadopago/qr-orders";
+import { authorizeDemoMutation } from "@/server/parking/demo-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const authorizationError = authorizeDemoMutation(request);
+  if (authorizationError) {
+    return authorizationError;
+  }
+
   const url = new URL(request.url);
   const amount = url.searchParams.get("amount") ?? "10.00";
   const description =

@@ -206,10 +206,6 @@ function mapMercadoPagoOrderStatus(
     return "paid";
   }
 
-  if (order.status === "processed") {
-    return "paid";
-  }
-
   if (order.status === "expired") {
     return "expired";
   }

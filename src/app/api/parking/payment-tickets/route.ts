@@ -1,3 +1,4 @@
+import { authorizeDemoMutation } from "@/server/parking/demo-guard";
 import { createParkingPaymentQrTicket } from "@/server/parking-payment-tickets";
 
 export const runtime = "nodejs";
@@ -10,6 +11,9 @@ type CreatePaymentTicketBody = {
 };
 
 export async function POST(request: Request) {
+  const authorizationError = authorizeDemoMutation(request);
+  if (authorizationError) return authorizationError;
+
   const body = (await request.json()) as CreatePaymentTicketBody;
 
   if (!body.amount || !body.description || !body.externalId) {

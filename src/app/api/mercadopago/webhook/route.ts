@@ -2,6 +2,7 @@ import { getMercadoPagoConfig } from "@/server/mercadopago/config";
 import { getMercadoPagoQrOrder } from "@/server/mercadopago/qr-orders";
 import type { MercadoPagoOrderWebhookBody } from "@/server/mercadopago/types";
 import { verifyMercadoPagoWebhookSignature } from "@/server/mercadopago/webhooks";
+import { applyMercadoPagoOrderToPayment } from "@/server/parking/domain";
 import { syncParkingPaymentTicketFromMercadoPagoOrder } from "@/server/parking-payment-tickets";
 import { type NextRequest } from "next/server";
 
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const order = await getMercadoPagoQrOrder(orderId);
+    await applyMercadoPagoOrderToPayment(order);
+
     await syncParkingPaymentTicketFromMercadoPagoOrder(order);
 
     return Response.json({ received: true }, { status: 200 });
