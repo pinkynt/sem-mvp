@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bike, Car, ChevronLeft, LogIn, Timer } from "lucide-react";
+import { Bike, Car, CheckCircle2, ChevronLeft, LogIn, Timer } from "lucide-react";
 import { AppHeader, Button, ChoiceButton, PlateInput } from "@/components";
 import type { ParkingDashboardDto, VehicleKind } from "@/contracts/parking";
 import { getPermitHolderHome, openParkingSession } from "@/features/parking/api";
-import { money } from "@/lib/parking-format";
+import { displayPlate, money } from "@/lib/parking-format";
 import { cn } from "@/lib/cn";
 
 type Mode = "prepago" | "pospago";
@@ -23,6 +23,7 @@ export default function NuevaPage() {
   const [vehicleKind, setVehicleKind] = useState<VehicleKind | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pospagoDone, setPospagoDone] = useState(false);
 
   const regionRef = useRef<HTMLDivElement>(null);
 
@@ -54,6 +55,10 @@ export default function NuevaPage() {
     setError(null);
     try {
       const response = await openParkingSession({ licensePlate: plate, vehicleKind, kind: mode });
+      if (mode === "pospago") {
+        setPospagoDone(true);
+        return;
+      }
       router.push(`/permisionario/sesiones/${response.session.id}`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "No se pudo crear la sesión");
@@ -157,6 +162,37 @@ export default function NuevaPage() {
           </>
         )}
       </div>
+
+      {pospagoDone && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pospago-success-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+        >
+          <div className="flex w-full max-w-sm flex-col items-center gap-7 rounded-card border border-border bg-surface px-6 py-9 text-center shadow-xl">
+            <div className="flex flex-col items-center gap-3">
+              <CheckCircle2 className="size-16 text-confirm" aria-hidden />
+              <h2 id="pospago-success-title" className="text-3xl font-extrabold tracking-tight text-brand-strong">
+                Entrada registrada
+              </h2>
+            </div>
+
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-sm font-semibold uppercase tracking-wide text-ink-soft">Patente</span>
+              <span className="text-5xl font-extrabold tracking-[0.15em] text-ink">{displayPlate(plate)}</span>
+            </div>
+
+            <p className="text-base text-ink-soft">
+              La entrada quedó registrada. El monto se calcula al registrar la salida.
+            </p>
+
+            <Button variant="confirm" fullWidth onClick={() => router.push("/permisionario")}>
+              Volver al inicio
+            </Button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
