@@ -224,7 +224,7 @@ export default function PermisionarioPage() {
   const stepNumber = flow.indexOf(step) + 1;
 
   return (
-    <main className="mx-auto flex h-dvh max-w-md flex-col overflow-hidden bg-surface shadow-sm">
+    <main className="flex h-dvh w-full flex-col overflow-hidden bg-surface">
       <AppHeader name="Juan" zone="Centro A" />
 
       {step !== "home" && step !== "done" && (
@@ -248,7 +248,7 @@ export default function PermisionarioPage() {
         ref={regionRef}
         key={step}
         tabIndex={-1}
-        className="step-in flex flex-1 flex-col gap-6 overflow-y-auto p-6 outline-none"
+        className="step-in flex flex-1 flex-col gap-5 overflow-y-auto p-4 outline-none sm:gap-6 sm:p-6"
       >
         {step === "home" && (
           <>
@@ -280,7 +280,7 @@ export default function PermisionarioPage() {
                         <button
                           type="button"
                           onClick={() => startSession(s)}
-                          className="flex w-full items-center gap-4 rounded-card border border-border bg-surface px-5 py-4 text-left outline-none transition-[background-color,border-color] duration-150 ease-out hover:border-brand-soft focus-visible:ring-4 focus-visible:ring-brand/30"
+                          className="flex w-full items-center gap-3 rounded-card border border-border bg-surface px-4 py-4 text-left outline-none transition-[background-color,border-color] duration-150 ease-out hover:border-brand-soft focus-visible:ring-4 focus-visible:ring-brand/30 sm:gap-4 sm:px-5"
                         >
                           <span
                             className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-surface-muted text-brand"
@@ -292,17 +292,19 @@ export default function PermisionarioPage() {
                               <Bike className="size-6" />
                             )}
                           </span>
-                          <span className="flex flex-1 flex-col">
-                            <span className="text-lg font-bold tracking-wide text-ink">
+                          <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                            <span className="truncate text-lg font-bold tracking-wide text-ink">
                               {s.plate}
                             </span>
-                            <span className="text-base text-ink-soft">
+                            <span className="truncate text-base text-ink-soft">
                               {v?.label} · hace {elapsedLabel(s.elapsedMin)}
                             </span>
+                            <span className="flex">
+                              <StatusBadge status="pendiente" label="Cobrar salida" />
+                            </span>
                           </span>
-                          <StatusBadge status="pendiente" label="Cobrar salida" />
                           <ChevronRight
-                            className="size-5 shrink-0 text-ink-soft"
+                            className="size-5 shrink-0 self-center text-ink-soft"
                             aria-hidden
                           />
                         </button>

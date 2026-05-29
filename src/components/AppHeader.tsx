@@ -8,7 +8,7 @@ interface AppHeaderProps {
 export function AppHeader({ name, zone }: AppHeaderProps) {
   return (
     <header className="bg-brand text-white">
-      <div className="mx-auto flex max-w-md items-center justify-between gap-4 px-5 py-4">
+      <div className="flex w-full items-center justify-between gap-4 px-4 py-4 sm:px-5">
         <div className="flex items-center gap-3">
           <span
             className="flex size-11 items-center justify-center rounded-xl bg-white/15 text-lg font-extrabold tracking-tight"
