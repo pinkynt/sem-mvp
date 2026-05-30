@@ -112,6 +112,19 @@ docker compose up -d node
 App disponible en <http://localhost:3000>.
 App en prod disponible en: <https://pinkynt-app-yehgud-d5782d-149-50-159-23.traefik.me>
 
+# Accesos
+
+## Dashboard
+
+Usuario: polo@muni.salta
+Clave: mate2026
+
+## App Permisionario
+
+Usuario: permizonacentro
+Clave: permi2026
+
+
 Rutas principales:
 
 - `/` — landing
