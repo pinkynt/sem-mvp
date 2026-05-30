@@ -110,6 +110,7 @@ docker compose up -d node
 ```
 
 App disponible en <http://localhost:3000>.
+App en prod disponible en: <https://pinkynt-app-yehgud-d5782d-149-50-159-23.traefik.me>
 
 Rutas principales:
 
@@ -151,7 +152,7 @@ PERMIT_HOLDER_SESSION_SECRET=
 
 ## Videos
 
-- **Pitch + demo:** _TODO — pendiente de upload a YouTube público antes del deadline._
+- **Pitch + demo:** https://youtu.be/mDJD-E954tM
 
 ---
 
